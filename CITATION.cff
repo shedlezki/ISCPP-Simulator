@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this simulator in academic work, please cite it using this metadata."
+title: "Intermittent Cooperation Multiagent Path Planning Simulation"
+authors:
+  - family-names: "Shedlezki"
+    given-names: "Itay"
+  - family-names: "Agmon"
+    given-names: "Noa"
+year: 2026
+license: "MIT"

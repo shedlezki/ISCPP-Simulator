@@ -1,0 +1,154 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<gexf xmlns="http://www.gexf.net/1.2draft" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.gexf.net/1.2draft http://www.gexf.net/1.2draft/gexf.xsd" version="1.2">  <graph defaultedgetype="undirected" mode="static">
+    <attributes class="node" mode="static">
+      <attribute id="tau_1" title="tau_1" type="long"/>
+      <attribute id="tau_2" title="tau_2" type="integer"/>
+    </attributes>
+    <attributes class="edge" mode="static">
+      <attribute id="tau" title="tau" type="integer"/>
+    </attributes>
+    <nodes>
+      <node id="0" label="s_1">
+        <attvalues>
+          <attvalue for="tau_1" value="0"/>
+          <attvalue for="tau_2" value="0"/>
+        </attvalues>
+        <viz:size value="10.0"/>
+        <viz:position x="-11.623978" y="423.37592"/>
+        <viz:color r="223" g="0" b="0"/>
+      </node>
+      <node id="1" label="s_2">
+        <attvalues>
+          <attvalue for="tau_1" value="0"/>
+          <attvalue for="tau_2" value="0"/>
+        </attvalues>
+        <viz:size value="10.0"/>
+        <viz:position x="-47.228226" y="290.39633"/>
+        <viz:color r="232" g="0" b="0"/>
+      </node>
+      <node id="2" label="g_1">
+        <attvalues>
+          <attvalue for="tau_1" value="0"/>
+          <attvalue for="tau_2" value="0"/>
+        </attvalues>
+        <viz:size value="10.0"/>
+        <viz:position x="484.67902" y="437.11816"/>
+        <viz:color r="90" g="58" b="192"/>
+      </node>
+      <node id="3" label="g_2">
+        <attvalues>
+          <attvalue for="tau_1" value="0"/>
+          <attvalue for="tau_2" value="0"/>
+        </attvalues>
+        <viz:size value="10.0"/>
+        <viz:position x="495.5762" y="264.02856"/>
+        <viz:color r="105" g="67" b="223"/>
+      </node>
+      <node id="4" label="c_1">
+        <attvalues>
+          <attvalue for="tau_1" value="10"/>
+          <attvalue for="tau_2" value="1"/>
+        </attvalues>
+        <viz:size value="10.0"/>
+        <viz:position x="113.767426" y="343.41785"/>
+        <viz:color r="216" g="216" b="223"/>
+      </node>
+      <node id="5" label="c_2">
+        <attvalues>
+          <attvalue for="tau_1" value="10"/>
+          <attvalue for="tau_2" value="1"/>
+        </attvalues>
+        <viz:size value="10.0"/>
+        <viz:position x="215.645" y="349.15405"/>
+        <viz:color r="216" g="216" b="223"/>
+      </node>
+      <node id="6" label="c_3">
+        <attvalues>
+          <attvalue for="tau_1" value="10"/>
+          <attvalue for="tau_2" value="1"/>
+        </attvalues>
+        <viz:size value="10.0"/>
+        <viz:position x="339.7954" y="351.34326"/>
+        <viz:color r="216" g="216" b="223"/>
+      </node>
+      <node id="7" label="a">
+        <attvalues/>
+        <viz:size value="10.0"/>
+        <viz:position x="126.024506" y="298.76382"/>
+        <viz:color r="225" g="225" b="232"/>
+      </node>
+    </nodes>
+    <edges>
+      <edge id="0" source="0" target="4">
+        <attvalues>
+          <attvalue for="tau" value="2"/>
+        </attvalues>
+      </edge>
+      <edge id="1" source="1" target="4">
+        <attvalues>
+          <attvalue for="tau" value="2"/>
+        </attvalues>
+      </edge>
+      <edge id="4" source="0" target="2">
+        <attvalues>
+          <attvalue for="tau" value="20"/>
+        </attvalues>
+      </edge>
+      <edge id="3" source="1" target="3">
+        <attvalues>
+          <attvalue for="tau" value="20"/>
+        </attvalues>
+      </edge>
+      <edge id="5" source="4" target="5">
+        <attvalues>
+          <attvalue for="tau" value="2"/>
+        </attvalues>
+      </edge>
+      <edge id="6" source="4" target="2">
+        <attvalues>
+          <attvalue for="tau" value="15"/>
+        </attvalues>
+      </edge>
+      <edge id="7" source="4" target="3">
+        <attvalues>
+          <attvalue for="tau" value="15"/>
+        </attvalues>
+      </edge>
+      <edge id="8" source="5" target="2">
+        <attvalues>
+          <attvalue for="tau" value="2"/>
+        </attvalues>
+      </edge>
+      <edge id="9" source="5" target="3">
+        <attvalues>
+          <attvalue for="tau" value="10"/>
+        </attvalues>
+      </edge>
+      <edge id="10" source="5" target="6">
+        <attvalues>
+          <attvalue for="tau" value="2"/>
+        </attvalues>
+      </edge>
+      <edge id="11" source="6" target="2">
+        <attvalues>
+          <attvalue for="tau" value="3"/>
+        </attvalues>
+      </edge>
+      <edge id="12" source="6" target="3">
+        <attvalues>
+          <attvalue for="tau" value="3"/>
+        </attvalues>
+      </edge>
+      <edge id="13" source="4" target="7">
+        <attvalues>
+          <attvalue for="tau" value="2"/>
+        </attvalues>
+      </edge>
+      <edge id="14" source="7" target="6">
+        <attvalues>
+          <attvalue for="tau" value="5"/>
+        </attvalues>
+      </edge>
+    </edges>
+  </graph>
+</gexf>
