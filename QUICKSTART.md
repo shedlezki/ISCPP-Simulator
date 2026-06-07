@@ -17,19 +17,14 @@ Instructions for installing and running the ICPP simulator for the first time.
   # Windows: Use installer from python.org
   ```
 
-### 2. Install Dependencies
+### 2. Install Package
 ```bash
-pip install networkx matplotlib numpy
+pip install -e .
 ```
 
-Or:
+For dependency-only setup:
 ```bash
 pip install -r requirements.txt
-```
-
-### 3. Navigate to Source Directory
-```bash
-cd src
 ```
 
 ## First Run (1 minute)
@@ -37,7 +32,7 @@ cd src
 ### Default Simulation
 Simply run:
 ```bash
-python main.py
+iscpp-simulator
 ```
 
 This will:
@@ -56,22 +51,22 @@ This will:
 
 ### Try a Real Map
 ```bash
-python main.py -m "Berlin_1_256"
+iscpp-simulator -m "Berlin_1_256"
 ```
 
 ### Use a Random Map of Medium Size
 ```bash
-python main.py --size medium
+iscpp-simulator --size medium
 ```
 
 ### Increase Cooperation Opportunities
 ```bash
-python main.py -d 0.7 -mt 20
+iscpp-simulator -d 0.7 -mt 20
 ```
 
 ### Run with Specific Scenario
 ```bash
-python main.py -m "Boston_0_256" -s "even-1"
+iscpp-simulator -m "Boston_0_256" -s "even-1"
 ```
 
 ## Understanding the GUI
@@ -129,17 +124,17 @@ python main.py -m "Boston_0_256" -s "even-1"
 
 ### Workflow 1: Quick Demo (2 minutes)
 ```bash
-python main.py --size small
+iscpp-simulator --size small
 ```
 Then click "Play" to see agents moving.
 
 ### Workflow 2: Comparing Strategies (5 minutes)
 ```bash
-python main.py -d 0.3
+iscpp-simulator -d 0.3
 # Check "Shortest Independent Path" - baseline performance
 # Check "Shortest Cooperated Path" - potential benefit
 
-python main.py -d 0.7
+iscpp-simulator -d 0.7
 # Repeat - notice how denser cooperation changes the difference
 ```
 
@@ -163,7 +158,7 @@ matplotlib.use('TkAgg')  # or 'Qt5Agg' if Qt is installed
 ### Problem: "Timeout! Retrying..." loops forever
 **Solution:** Try a simpler map:
 ```bash
-python main.py --size small
+iscpp-simulator --size small
 ```
 
 ### Problem: Map not found
@@ -189,7 +184,7 @@ project/
 The GUI shows an "EID" (Experiment ID) at the top. Click to copy it for tracking:
 ```bash
 # Manual tracking
-python main.py -d 0.5 > experiment_log.txt
+iscpp-simulator -d 0.5 > experiment_log.txt
 # EID appears in console
 ```
 
@@ -206,21 +201,20 @@ python main.py -d 0.5 > experiment_log.txt
 
 ```
 INSTALLATION
-  pip install networkx matplotlib numpy
+  pip install -e .
 
 FIRST RUN
-  cd src
-  python main.py
+  iscpp-simulator
 
 COMMON COMMANDS
   # Default 8x8 grid
-  python main.py
+  iscpp-simulator
   
   # Random small map
-  python main.py --size small
+  iscpp-simulator --size small
   
   # High cooperation density
-  python main.py -d 0.8 -mt 15
+  iscpp-simulator -d 0.8 -mt 15
   
 
 GUI CONTROLS

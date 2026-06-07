@@ -1,7 +1,7 @@
-import mapfBenchmarkProvider
-import gui
 import argparse
 import networkx as nx  # type: ignore[import-untyped]
+
+from . import mapf_benchmark_provider
 
 
 def parse_args():
@@ -36,6 +36,18 @@ def parse_args():
         help="Seperation value",
     )
     parser.add_argument("-si", "--size", type=str, required=False, help="Map size")
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        required=False,
+        help="Directory containing mapf-map data, or a graphs directory containing it",
+    )
+    parser.add_argument(
+        "--scenario-dir",
+        type=str,
+        required=False,
+        help="Directory containing MAPF .scen files",
+    )
 
     return parser.parse_args()
 
@@ -75,9 +87,9 @@ def shortest_cooperated_path(G, v_s, v_g):
     return shortest_paths(G, v_s, "tau_2")[v_g]
 
 
-if __name__ == "__main__":
+def main():
     args = parse_args()
-    G, pos, grid, map = mapfBenchmarkProvider.get_graph_with_timeout(
+    G, pos, grid, _map_name = mapf_benchmark_provider.get_graph_with_timeout(
         args.map,
         args.scenario,
         args.density,
@@ -86,6 +98,8 @@ if __name__ == "__main__":
         args.extent,
         3,
         args.size,
+        args.data_dir,
+        args.scenario_dir,
     )
     SIP1, SIP2 = (
         shortest_independent_path(G, "s_1", "g_1"),
@@ -99,5 +113,11 @@ if __name__ == "__main__":
         "Shortest Independent Paths": (SIP1, SIP2),
         "Shortest Cooperation Paths": (SCP1, SCP2),
     }
+    from . import gui
+
     g = gui.GUI(G, pos, grid, paths, args, "123456789")
     g.show()
+
+
+if __name__ == "__main__":
+    main()

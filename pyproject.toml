@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iscpp-simulator"
+version = "0.1.0"
+description = "Intermittent Strategic Cooperation path planning simulator"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+    { name = "Itay Shedlezki" },
+    { name = "Noa Agmon" },
+]
+dependencies = [
+    "networkx>=2.6",
+    "matplotlib>=3.5.0",
+    "numpy>=1.21.0",
+]
+keywords = [
+    "multi-agent path finding",
+    "path planning",
+    "simulation",
+    "cooperation",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.scripts]
+iscpp-simulator = "iscpp_simulator.main:main"
+
+[project.urls]
+Homepage = "https://github.com/shedlezki/ISCPP-Simulator"
+Repository = "https://github.com/shedlezki/ISCPP-Simulator"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+iscpp_simulator = [
+    "data/graphs/**/*.edges",
+    "data/graphs/**/*.gephi",
+    "data/graphs/**/*.gexf",
+    "data/graphs/**/*.gml",
+    "data/graphs/**/*.graphml",
+    "data/graphs/**/*.map",
+    "data/graphs/**/*.mtx",
+]

@@ -1,28 +1,55 @@
 import networkx as nx  # type: ignore[import-untyped]
 import numpy as np
-import matplotlib.pyplot as plt
 import random
-import simulation
 import concurrent.futures
-import os
 import time
+from importlib import resources
+from pathlib import Path
 
-PATH_TO_GRAPHS = "../graphs/mapf-map/"
-PATH_TO_EVEN_SCENES = "../graphs/scen-even/"
-PATH_TO_RANDOM_SCENES = "../graphs/scen-random/"
+PACKAGE_GRAPHS = resources.files("iscpp_simulator").joinpath("data", "graphs")
+
+
+def _graph_root(data_dir=None):
+    if data_dir is not None:
+        path = Path(data_dir).expanduser()
+        if (path / "mapf-map").exists():
+            return path / "mapf-map"
+        return path
+    return PACKAGE_GRAPHS.joinpath("mapf-map")
+
+
+def _scenario_root(scenario_dir=None):
+    if scenario_dir is not None:
+        return Path(scenario_dir).expanduser()
+
+    dev_scenario_root = Path.cwd() / "graphs" / "scen-even"
+    if dev_scenario_root.exists():
+        return dev_scenario_root
+
+    return None
+
+
+def _map_file(map_name, data_dir=None):
+    return _graph_root(data_dir).joinpath(f"{map_name}.map")
+
+
+def _scenario_file(map_name, scene_name, scenario_dir=None):
+    scenario_root = _scenario_root(scenario_dir)
+    if scenario_root is None:
+        raise FileNotFoundError(
+            "Scenario files are not bundled in the PyPI package. "
+            "Use --scenario-dir to point at a directory containing .scen files."
+        )
+    return scenario_root / f"{map_name}-{scene_name}.scen"
 
 
 # Return a random map name from the mapf-by-size folder for the given size.
-def get_random_map_by_size(size):
-    folder_path = os.path.join(PATH_TO_GRAPHS, "mapf-by-size", size)
-    files = [
-        f
-        for f in os.listdir(folder_path)
-        if os.path.isfile(os.path.join(folder_path, f))
-    ]
+def get_random_map_by_size(size, data_dir=None):
+    folder_path = _graph_root(data_dir).joinpath("mapf-by-size", size)
+    files = [f for f in folder_path.iterdir() if f.is_file()]
     if not files:
         return None
-    basename, _ = os.path.splitext(random.choice(files))
+    basename = Path(random.choice(files).name).stem
     return f"mapf-by-size/{size}/{basename}"
 
 
@@ -36,9 +63,11 @@ def get_graph_with_timeout(
     extent,
     timeout=1,
     size=None,
+    data_dir=None,
+    scenario_dir=None,
 ):
     if size is not None:
-        map_name = get_random_map_by_size(size)
+        map_name = get_random_map_by_size(size, data_dir)
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         while True:
             future = executor.submit(
@@ -50,6 +79,8 @@ def get_graph_with_timeout(
                 distance=correlation,
                 length=extent,
                 use_scenario=scenario_name is not None,
+                data_dir=data_dir,
+                scenario_dir=scenario_dir,
             )
             try:
                 G, pos, grid = future.result(timeout=timeout)
@@ -61,7 +92,7 @@ def get_graph_with_timeout(
 
 # Generate a grid from the map file.
 def _map_file_to_grid(filepath):
-    with open(filepath, "r") as f:
+    with filepath.open("r") as f:
         lines = f.readlines()
     height = int([line for line in lines if line.startswith("height")][0].split()[1])
     width = int([line for line in lines if line.startswith("width")][0].split()[1])
@@ -238,6 +269,8 @@ def _generate_and_add_start_and_target_nodes(G: nx.Graph, pos, grid, distance, l
 
 
 def _draw_grid_and_graph(grid, G, pos):
+    import matplotlib.pyplot as plt
+
     rows, cols = len(grid), len(grid[0])
     fig, ax = plt.subplots(figsize=(cols / 5, rows / 5))
 
@@ -291,7 +324,7 @@ def _draw_grid_and_graph(grid, G, pos):
 
 # generates a graphs with the provided paramters
 def get_graph(
-    map,
+    map_name,
     scene,
     type="grid",
     ratio=0.5,
@@ -299,15 +332,17 @@ def get_graph(
     distance=3,
     length=20,
     use_scenario=False,
+    data_dir=None,
+    scenario_dir=None,
 ):
-    grid = _map_file_to_grid(PATH_TO_GRAPHS + map + ".map")
+    grid = _map_file_to_grid(_map_file(map_name, data_dir))
 
     if type == "grid":
         G, pos = _get_grid_graph(grid)
 
     if use_scenario:
         G, pos = _add_start_and_target_nodes(
-            G, pos, PATH_TO_EVEN_SCENES + map + "-" + scene + ".scen"
+            G, pos, _scenario_file(map_name, scene, scenario_dir)
         )
     else:
         G, pos = _generate_and_add_start_and_target_nodes(
@@ -348,13 +383,15 @@ def generate_weights(G):
 
 
 if __name__ == "__main__":
-    map = "empty-8-8"
+    from . import simulation
+
+    map_name = "empty-8-8"
     scene = "even-1"
 
-    grid = _map_file_to_grid(PATH_TO_GRAPHS + map + ".map")
+    grid = _map_file_to_grid(_map_file(map_name))
     G, pos = _get_grid_graph(grid)
     G, pos = _add_start_and_target_nodes(
-        G, pos, PATH_TO_EVEN_SCENES + map + "-" + scene + ".scen"
+        G, pos, _scenario_file(map_name, scene)
     )
     G = _add_node_weights(G, 0.5, True, 3, 1)
 

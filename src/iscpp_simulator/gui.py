@@ -1,6 +1,7 @@
 import tkinter as tk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import simulation
+
+from . import simulation
 
 social_evaluators = ["Social Sum"]
 

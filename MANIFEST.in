@@ -1,0 +1,7 @@
+include README.md
+include LICENSE
+include CITATION.cff
+recursive-include src/iscpp_simulator/data/graphs *.edges *.gephi *.gexf *.gml *.graphml *.map *.mtx
+prune graphs/scen-even
+prune graphs/scen-random
+global-exclude __pycache__ *.py[cod] .DS_Store

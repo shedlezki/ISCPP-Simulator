@@ -17,17 +17,19 @@ In the Intermittent Cooperation Path Planning problem, agents must navigate from
 
 ### Prerequisites
 
-- Python 3.7+
-- Required packages: `networkx`, `matplotlib`, `numpy`
+- Python 3.9+
+- Required packages are installed automatically when installing the package.
 
 ### Installation
 
 ```bash
-# Install dependencies
-pip install networkx matplotlib numpy
+pip install iscpp-simulator
+```
 
-# Navigate to source directory
-cd src
+For local development from a clone:
+
+```bash
+pip install -e .
 ```
 
 ### Running the Simulator
@@ -38,13 +40,13 @@ The project includes a simple `main.py` entry point that demonstrates the basic 
 
 ```bash
 # Run with default parameters (empty 8x8 map)
-python main.py
+iscpp-simulator
 
-# Specify a simple map from the benchmark dataset
-python main.py -m "empty-16-16" -d 0.5 -mt 10
+# Specify a simple map from the bundled benchmark maps
+iscpp-simulator -m "empty-16-16" -d 0.5 -mt 10
 
 # Use a random simple map
-python main.py --size small
+iscpp-simulator --size small
 ```
 
 #### Command-Line Arguments
@@ -58,18 +60,20 @@ python main.py --size small
 | `--extent` | `-e` | int | No | 5 | Manhattan distance between each agent's start node and target node |
 | `--seperation` | `-se` | int | No | 4 | Manhattan distance between the two agents' start nodes and between their target nodes |
 | `--size` | `-si` | str | No | - | Random map size: `small`, `medium`, or `large` |
+| `--data-dir` | - | str | No | - | External `graphs/` or `mapf-map/` directory to use instead of bundled maps |
+| `--scenario-dir` | - | str | No | - | External directory containing `.scen` files |
 
 ### Example Commands
 
 ```bash
 # Default empty map simulation
-python main.py
+iscpp-simulator
 
 # Simple maze map with custom cooperation parameters
-python main.py -m "maze-32-32-2" -d 0.6 -mt 15 -e 7
+iscpp-simulator -m "maze-32-32-2" -d 0.6 -mt 15 -e 7
 
-# Random small map with even scenario distribution
-python main.py --size small -s "even-1" -d 0.5
+# Use external scenario files from a local checkout or downloaded benchmark set
+iscpp-simulator --scenario-dir graphs/scen-even --size small -s "even-1" -d 0.5
 ```
 
 ## 🖥️ GUI Usage
@@ -168,20 +172,22 @@ project/
 ├── README.md                          # This file
 ├── DOCUMENTATION.md                   # Detailed technical documentation
 ├── ARCHITECTURE.md                    # System architecture guide
+├── pyproject.toml                     # Python package metadata
 ├── src/
-│   ├── main.py                        # Main entry point
-│   ├── mapfBenchmarkProvider.py       # Map and scenario loading
-│   ├── simulation.py                  # Visualization and animation
-│   └── gui.py                         # GUI interface
+│   └── iscpp_simulator/
+│       ├── main.py                    # Main entry point
+│       ├── mapf_benchmark_provider.py # Map and scenario loading
+│       ├── simulation.py              # Visualization and animation
+│       ├── gui.py                     # GUI interface
+│       └── data/graphs/               # Bundled maps and non-scenario graphs
 ├── graphs/
-│   ├── mapf-map/                      # MAPF benchmark maps
-│   │   ├── mapf-by-size/              # Maps organized by size
-│   │   │   ├── small/
-│   │   │   ├── medium/
-│   │   │   └── large/
 │   ├── scen-even/                     # Even-distribution scenarios
 │   └── scen-random/                   # Random scenarios
 ```
+
+PyPI builds include the bundled maps and graph files under
+`src/iscpp_simulator/data/graphs/`, but exclude the heavier `.scen` scenario
+files. Scenario mode remains available by passing `--scenario-dir`.
 
 ## 🔧 Advanced Usage
 
@@ -288,13 +294,13 @@ paths["Custom Strategy"] = (
 
 ### Example 1: Basic Comparison
 ```bash
-python main.py
+iscpp-simulator
 # Compares shortest independent vs. cooperative paths on default 8x8 map
 ```
 
 ### Example 2: Simple Scenario
 ```bash
-python main.py -m "empty-16-16" -s "empty-16-16-even-1" -d 0.4 -mt 20
+iscpp-simulator -m "empty-16-16" -s "empty-16-16-even-1" -d 0.4 -mt 20
 # Uses a simple 16x16 empty map with first even-distribution scenario
 # 40% cooperation nodes with benefit of 20 time units
 ```
@@ -303,7 +309,7 @@ python main.py -m "empty-16-16" -s "empty-16-16-even-1" -d 0.4 -mt 20
 ```bash
 for d in 0.3 0.5 0.7; do
   for mt in 5 10 15; do
-    python main.py -d $d -mt $mt
+    iscpp-simulator -d $d -mt $mt
   done
 done
 ```

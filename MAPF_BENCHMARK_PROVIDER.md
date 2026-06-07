@@ -1,6 +1,6 @@
 # MAPF Benchmark Provider
 
-`src/mapfBenchmarkProvider.py` provides the data-construction interface between standard Multi-Agent Path Finding (MAPF) benchmark instances and the Intermittent Cooperation Path Planning (ICPP) simulator. It loads grid maps and scenario files from the benchmark dataset under `graphs/`, converts traversable grid cells into a NetworkX graph, and augments the resulting instance with cooperation-related attributes required by the ICPP model.
+`src/iscpp_simulator/mapf_benchmark_provider.py` provides the data-construction interface between standard Multi-Agent Path Finding (MAPF) benchmark instances and the Intermittent Cooperation Path Planning (ICPP) simulator. It loads bundled grid maps, optionally reads external scenario files, converts traversable grid cells into a NetworkX graph, and augments the resulting instance with cooperation-related attributes required by the ICPP model.
 
 ## Purpose
 
@@ -12,15 +12,17 @@ For this reason, the provider does not treat MAPF files as complete ICPP problem
 
 The provider exposes two graph-construction entry points: `get_graph(...)`, which performs a single construction attempt, and `get_graph_with_timeout(...)`, which retries construction when start and goal augmentation takes longer than the configured timeout. The timeout wrapper is useful when procedurally generated starts and targets must satisfy the `--extent` and `--seperation` constraints, because unfavorable random samples can take longer to resolve. Both entry points use the same benchmark and augmentation parameters:
 
-- `--map`: Name of the map under `graphs/mapf-map/`, excluding the `.map` suffix. Examples include `empty-8-8`, `empty-16-16`, and `maze-32-32-2`.
-- `--size`: Optional random map selector. If set to `small`, `medium`, or `large`, the provider selects a map uniformly from `graphs/mapf-map/mapf-by-size/<size>/` and ignores the explicit `--map` value.
-- `--scenario`: Optional scenario identifier. If provided, start and goal coordinates are read from `graphs/scen-even/<map>-<scenario>.scen`.
+- `--map`: Name of a bundled or external map, excluding the `.map` suffix. Examples include `empty-8-8`, `empty-16-16`, and `maze-32-32-2`.
+- `--size`: Optional random map selector. If set to `small`, `medium`, or `large`, the provider selects a map uniformly from `mapf-by-size/<size>/` and ignores the explicit `--map` value.
+- `--scenario`: Optional scenario identifier. If provided, start and goal coordinates are read from `<scenario-dir>/<map>-<scenario>.scen`.
+- `--data-dir`: Optional external `graphs/` or `mapf-map/` directory to use instead of bundled maps.
+- `--scenario-dir`: Optional directory containing `.scen` files. Scenario files are not bundled in the PyPI package.
 - `--density`: Probability that a traversable node is assigned a cooperation benefit when start and goal nodes are generated procedurally.
 - `--magnitude`: Independent execution time assigned at cooperation-beneficial nodes. Since cooperative execution time is fixed at `1`, larger values increase the benefit of cooperation.
 - `--extent`: Manhattan distance used when procedurally generating each agent's start-goal pair.
 - `--seperation`: Manhattan distance used when generating the second agent's task relative to the first agent's task.
 
-The raw data consists of MAPF `.map` and `.scen` files. In addition, this repository supports `X` as an ICPP-specific map symbol for pre-marked cooperation cells.
+The bundled PyPI data consists of MAPF `.map` files and other non-scenario graph files. Scenario files are kept outside the package and can be supplied with `--scenario-dir`. In addition, this repository supports `X` as an ICPP-specific map symbol for pre-marked cooperation cells.
 
 ### Map File Input
 
@@ -62,7 +64,7 @@ When no scenario is provided, cooperation benefits are generated randomly: each 
 
 When a scenario is provided, the provider uses the map's `X` cells as cooperation opportunities instead of sampling cooperation locations according to `--density`. In this mode, `X` nodes receive `tau_1 = --magnitude` and `tau_2 = 1`; all other non-special nodes receive equal travel times. Start and goal nodes receive zero execution time in both modes.
 
-The simulator consumes this output directly. `src/main.py` computes shortest independent paths using `tau_1`, shortest cooperated paths using `tau_2`, and passes `G`, `pos`, and `grid` to the GUI for visualization and time-stepped execution.
+The simulator consumes this output directly. `src/iscpp_simulator/main.py` computes shortest independent paths using `tau_1`, shortest cooperated paths using `tau_2`, and passes `G`, `pos`, and `grid` to the GUI for visualization and time-stepped execution.
 
 ## Citation
 
