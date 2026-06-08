@@ -30,7 +30,7 @@ class GUI:
             text=(
                 f"Map: {self.args.map} Density: {self.args.density} "
                 f"Magnitude: {self.args.magnitude} Extent: {self.args.extent} "
-                f"Seperation: {self.args.seperation} EID: {self.eid}"
+                f"Seperation: {getattr(self.args, 'seperation', getattr(self.args, 'correlation'))} EID: {self.eid}"
             ),
             fg="black",
             cursor="hand2",
@@ -74,7 +74,7 @@ class GUI:
             var = check_states[i]
             cb = tk.Checkbutton(
                 self.root,
-                text=f"path {p} ({self.paths[p][0]['length']},{self.paths[p][1]['length']})",
+                text=f"{p} ({self.paths[p][0]['length']},{self.paths[p][1]['length']})",
                 variable=var,
                 fg=colors[i],
                 command=lambda v=var, p1=self.paths[p][0], p2=self.paths[p][
