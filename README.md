@@ -2,8 +2,6 @@
 
 This repository contains the implementation of a simulator for the **Intermittent Cooperation Path Planning (ICPP)** problem in multi-agent systems, enabling evaluation of path planning strategies where agents can benefit from selective cooperation to reduce task completion times.
 
-The source code and dataset generator are available at https://github.com/shedlezki/ISCPP-Simulator.
-
 ## 🎯 Problem Overview
 
 In the Intermittent Cooperation Path Planning problem, agents must navigate from their starting positions to their respective goal positions in a graph-based environment. Certain nodes provide **cooperative opportunities** where agents can work together to reduce traversal time.
@@ -187,27 +185,11 @@ project/
 │   └── scen-random/                   # Random scenarios
 ```
 
-## � Future Work
+PyPI builds include the bundled maps and graph files under
+`src/iscpp_simulator/data/graphs/`, but exclude the heavier `.scen` scenario
+files. Scenario mode remains available by passing `--scenario-dir`.
 
-Future extensions of this line of research include:
-
-- formal analysis of equilibrium existence and efficiency in intermittent cooperation environments;
-- algorithmic development for strategic coordination under partial observability and asynchronous timing;
-- extensions to larger agent populations, heterogeneous cooperation costs, and graph classes beyond grid-like MAPF benchmarks;
-- integration with learned planning heuristics and evaluation of empirical performance across benchmark suites.
-
-## 🤝 Collaboration and Contact
-
-We welcome collaboration from researchers working on multi-agent planning, algorithmic game theory, and cooperative decision-making. Contributions may include theoretical analysis, algorithm design, experimental benchmarking, and extensions to new domains.
-
-Please direct inquiries and collaboration proposals to the project maintainers at:
-
-- `i.shedlezki@gmail.com`
-- `agmon@cs.biu.ac.il`
-
-Alternative contact information and institutional affiliations are provided in the repository documentation.
-
-## �🔧 Advanced Usage
+## 🔧 Advanced Usage
 
 ### Custom Map Creation
 
