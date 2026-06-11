@@ -48,6 +48,30 @@ The repository provides:
 
 The implementation is intended for researchers and practitioners studying coordination among selfish agents in structured domains.
 
+The source code and documentation are available at: https://github.com/shedlezki/ISCPP-Simulator
+
+## Future work
+
+Potential directions for future work include:
+
+- generalization to more than two agents (\(k > 2\))
+- online planning for real-time strategy synthesis in dynamic environments
+- stochastic systems with uncertainty in travel times, cooperation availability, and agent behavior
+- capacitated systems that model congestion and resource contention at nodes and edges
+- integration of learning-based planners and empirical validation on benchmark suites
+- application to broader graph classes and heterogeneous cost structures
+
+## Collaboration and contact
+
+We welcome collaboration from researchers working on multi-agent planning, algorithmic game theory, incentive-aware coordination, and cooperative decision-making. Contributions may include theoretical analysis, algorithm design, empirical benchmarking, and extensions to new application domains.
+
+Please direct inquiries and collaboration proposals to:
+
+- `i.shedlezki@gmail.com`
+- `agmon@cs.biu.ac.il`
+
+We invite researchers to contribute via issues, pull requests, and joint publications in this line of work.
+
 ## Citation
 
 If this simulator or associated datasets are used in academic work, please cite the repository and any accompanying publication.
