@@ -298,6 +298,14 @@ iscpp-simulator
 # Compares shortest independent vs. cooperative paths on default 8x8 map
 ```
 
+## 📣 GitHub Pages
+
+- A project site has been added under the `docs/` folder. The main page describing the new problem is at [docs/index.md](docs/index.md).
+- To publish the site via GitHub Pages: go to your repository **Settings → Pages**, set the source to the `main` branch and the `/docs` folder (or the branch you prefer), then save. The page will be available at `https://<your-username>.github.io/<your-repo>/` shortly after.
+
+If you want, I can commit and push these changes to your remote and provide the exact URL once Pages is enabled.
+
+
 ### Example 2: Simple Scenario
 ```bash
 iscpp-simulator -m "empty-16-16" -s "empty-16-16-even-1" -d 0.4 -mt 20
