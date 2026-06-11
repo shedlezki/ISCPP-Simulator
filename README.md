@@ -187,10 +187,6 @@ project/
 │   └── scen-random/                   # Random scenarios
 ```
 
-PyPI builds include the bundled maps and graph files under
-`src/iscpp_simulator/data/graphs/`, but exclude the heavier `.scen` scenario
-files. Scenario mode remains available by passing `--scenario-dir`.
-
 ## � Future Work
 
 Future extensions of this line of research include:
