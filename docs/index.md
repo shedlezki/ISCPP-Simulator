@@ -51,15 +51,15 @@ how those incentives shape the resulting paths.
 
 ## Formal model
 
-An instance is defined over a graph \(G = (V, E)\), a set of agents \(A\), start
+An instance is defined over a graph $G = (V, E)$, a set of agents $A$, start
 and target vertices for each agent, and node execution costs.
 
-For each node \(v \in V\):
+For each node $v \in V$:
 
-- \(\tau_1(v)\) is the cost of traversing \(v\) independently.
-- \(\tau_2(v)\) is the cost when two agents cooperate at \(v\).
+- $\tau_1(v)$ is the cost of traversing $v$ independently.
+- $\tau_2(v)$ is the cost when two agents cooperate at $v$.
 
-For cooperation nodes, \(\tau_2(v) < \tau_1(v)\).
+For cooperation nodes, $\tau_2(v) < \tau_1(v)$.
 
 Agents choose paths and timing strategies that minimize their own completion
 times. A cooperative execution can occur only when the relevant agents are
