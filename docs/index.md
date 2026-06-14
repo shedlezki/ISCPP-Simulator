@@ -6,78 +6,119 @@ title: Intermittent Strategic Cooperation of Selfish Agents on Graphs
 
 # Intermittent Strategic Cooperation of Selfish Agents on Graphs
 
-**GitHub Repository:** [ISCPP-Simulator](https://github.com/shedlezki/ISCPP-Simulator)
+Intermittent Strategic Cooperation-Based Path Planning studies how self-interested agents
+move through a graph when cooperation is possible at selected locations. Each
+agent has its own start and target, and each agent seeks to minimize its own
+path time. Cooperation can reduce execution time at specific nodes, but it
+may also require waiting, synchronization, or a detour from an individually
+shortest path.
 
-## Overview
+The problem combines multi-agent path planning with strategic decision-making:
+agents must reason not only about graph distances, but also about whether a
+temporary cooperative interaction is individually worthwhile.
 
-This repository introduces a formal framework for the analysis of intermittent strategic cooperation among self-interested agents operating on graph-structured environments. The model captures scenarios in which strategic agents navigate a graph from specified start nodes to designated targets and can cooperate at some nodes.
+## Problem intuition
 
-Intermittent cooperation is characterized by its conditional nature: cooperative interactions are available only at selected graph locations and may require temporal coordination, waiting, or routing deviations. Agents are assumed to be selfish, optimizing individual completion time while considering the potential benefits of transient collaboration.
+In classical path planning, each agent can often be planned independently or
+coordinated under a shared team objective. Intermittent strategic cooperation
+occupies a different space. Agents are selfish, but the environment contains
+local opportunities where cooperation can benefit both agents.
 
-## Problem statement
+A cooperation opportunity is useful only when the agents can meet at the relevant
+node at compatible times. An agent may therefore prefer to:
 
-Given a graph \(G = (V, E)\), a set of agents \(A\), and two cost functions per node:
+- follow its shortest independent path
+- wait for another agent at a cooperation node
+- take a longer route to gain a cooperative speedup
+- ignore a cooperation opportunity if the delay or detour is too costly
 
-- \(\tau_{1}(v)\): independent traversal cost at node \(v\), and
-- \(\tau_{2}(v)\): cooperative traversal cost at node \(v\), with \(\tau_{2}(v) < \tau_{1}(v)\) for cooperation nodes.
-
-The problem is to determine agent strategies and joint paths that optimize individual incentives by levergaing intermittent cooperative opportunities. Agents may elect to wait or detour to realize a cooperative execution, and the resulting outcome depends on both graph topology and other agents' paths.
+The central question is when cooperation emerges from individual incentives and
+how those incentives shape the resulting paths.
 
 ## Formal model
 
-- Graph: \(G = (V, E)\) with weighted edges.
-- Cooperation nodes: \(C \subseteq V\).
-- Nodes travel costs:
-  - independent cost \(\tau_{1}(v)\) for agent \(i\) at node \(v\);
-  - cooperative cost \(\tau_{2}(v)\) when two agents jointly traverse a cooperation node.
-- Agent objectives: minimize individual path time.
+An instance is defined over a graph \(G = (V, E)\), a set of agents \(A\), start
+and target vertices for each agent, and node execution costs.
+
+For each node \(v \in V\):
+
+- \(\tau_1(v)\) is the cost of traversing \(v\) independently.
+- \(\tau_2(v)\) is the cost when two agents cooperate at \(v\).
+
+For cooperation nodes, \(\tau_2(v) < \tau_1(v)\).
+
+Agents choose paths and timing strategies that minimize their own completion
+times. A cooperative execution can occur only when the relevant agents are
+co-located at a cooperation node at compatible times.
+
+## Core concepts
+
+- **Selfish agents:** each agent optimizes its own path time.
+- **Cooperation nodes:** selected graph vertices where joint traveling is faster
+  than independent traveling.
+- **Intermittent cooperation:** cooperation is local and temporary.
+- **Synchronization:** agents may need to wait or adjust routes to cooperate.
+- **Strategic path choice:** a path is evaluated by both travel cost and expected
+  cooperative benefit.
 
 ## Research questions
 
-This work supports exploration of the following research directions:
+Intermittent strategic cooperation raises questions at the intersection of
+multi-agent planning, algorithms, and game theory:
 
-- Under what conditions does intermittent cooperation arise as an equilibrium among selfish agents?
-- How should agents trade off waiting, detours, and cooperation to minimize their own completion time?
-- How do graph structure and the density of cooperation nodes influence equilibrium efficiency and social welfare?
-- What are the algorithmic implications for planning and coordination in different cooperation environments?
+- When is cooperation individually rational for selfish agents?
+- Which paths form stable outcomes when each agent can choose independently?
+- How do waiting, detours, and cooperative speedups trade off?
+- How does graph structure affect the emergence and value of cooperation?
+- What is the efficiency gap between selfish outcomes and socially optimal plans?
+- Which algorithms can compute beneficial or stable cooperative path profiles?
 
-## Repository scope
+## Related repositories
 
-The repository provides:
+- [ISC2PP](https://github.com/shedlezki/ISC2PP#) contains algorithms and
+  computational methods for the Intermittent Strategic Cooperation of Two
+  Selfish Agents Path Planning problem.
+- [ISCPP-Simulator](https://github.com/shedlezki/ISCPP-Simulator) provides a
+  simulator and visualization environment for constructing instances, evaluating
+  path profiles, and demonstrating cooperative interactions on graph-based maps.
 
-- a simulator for the Intermittent Cooperation Path Planning problem;
-- benchmark maps, scenarios, and data loaders for MAPF-style graphs;
-- visualization tools for path execution and cooperative interactions;
-- a demonstration entry point illustrating independent and cooperative path evaluation.
+Together, these repositories support both the algorithmic study of the problem
+and empirical exploration through simulation and visualization.
 
-The implementation is intended for researchers and practitioners studying coordination among selfish agents in structured domains.
+## Applications
 
-The source code and documentation are available at the [ISCPP-Simulator repository](https://github.com/shedlezki/ISCPP-Simulator).
+The ISCPP model is relevant to domains where autonomous or human-controlled
+agents are primarily self-interested but can occasionally benefit from local
+coordination:
 
-## Future work
+- robotic navigation with shared manipulation or charging opportunities
+- logistics and warehouse routing with temporary resource sharing
+- transportation networks with coordination points
+- distributed computing or communication tasks with local collaboration benefits
+- evacuation, rescue, and service-routing settings with opportunistic teamwork
 
-Potential directions for future work include:
+## Future directions
 
-- generalization to more than two agents (\(k > 2\))
-- online planning for real-time strategy synthesis in dynamic environments
-- stochastic systems with uncertainty in travel times, cooperation availability, and agent behavior
-- capacitated systems that model congestion and resource contention at nodes and edges
-- integration of learning-based planners and empirical validation on benchmark suites
-- application to broader graph classes and heterogeneous cost structures
+Potential extensions include:
+
+- generalizing from two agents to larger populations
+- online planning under uncertainty and dynamic graph conditions
+- stochastic cooperation availability and variable execution times
+- congestion, capacity limits, and resource contention
+- heterogeneous agents with different costs and cooperation abilities
 
 ## Collaboration and contact
 
-We welcome collaboration from researchers working on multi-agent planning, algorithmic game theory, incentive-aware coordination, and cooperative decision-making. Contributions may include theoretical analysis, algorithm design, empirical benchmarking, and extensions to new application domains.
+Researchers interested in multi-agent planning, algorithmic game theory,
+incentive-aware coordination, and cooperative decision-making are welcome to
+contribute ideas, algorithms, experiments, and extensions.
 
 Please direct inquiries and collaboration proposals to:
 
 - `i.shedlezki@gmail.com`
 - `agmon@cs.biu.ac.il`
 
-We invite researchers to contribute via issues, pull requests, and joint publications in this line of work.
-
 ## Citation
 
-If this simulator or associated datasets are used in academic work, please cite the repository and any accompanying publication.
-
----
+If you use the ISCPP model, associated algorithms, simulator, or datasets in
+academic work, please cite the relevant repository and accompanying publication.
