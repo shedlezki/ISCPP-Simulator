@@ -7,15 +7,11 @@ from typing import Callable, Dict, FrozenSet, Hashable, List, Mapping, Tuple
 import networkx as nx  # type: ignore[import-untyped]
 import matplotlib.animation as animation
 import matplotlib.colors as mcolors
-from matplotlib.patches import Wedge
+from matplotlib.patches import Circle
 import matplotlib.pyplot as plt
 
 SPEED = 25
 
-R1_COLOR = "#FF90BB"
-R2_COLOR = "#4ED7F1"
-R1_BASE_COLOR = "#FF0060"
-R2_BASE_COLOR = "#0079FF"
 EDGES_COLOR = "black"
 NODES_COLOR = "#BCCCDC"
 COOPERATION_NODES_COLOR = "#9AA6B2"
@@ -23,6 +19,7 @@ LIVE_PATH_COLOR = "pink"
 GRID_SIZE = 15
 NODE_SIZE = 50
 ROBOT_SIZE = 0.1
+ROBOT_OFFSET_RADIUS = 0.15  # separates colocated agents' markers
 PATH_GAP = 0.05
 PATH_WIDTH = 2
 
@@ -80,17 +77,19 @@ def validate_joint_strategy(G, joint_strategy):
     resolved as its own independent coalition-formation episode by the
     simulator - see simulate_joint_strategy). Raises ValueError on any
     structural violation.
+
+    Note: this does NOT require v_0/v_last to be named "s_i"/"g_i" - that
+    string convention belongs to mapf_benchmark_provider.py's graph
+    generation, not to the strategy model itself (the paper's v_0=s_i is
+    notation for "the agent's own source", not a naming requirement), and
+    other legitimate graphs (e.g. the visualizer's $-decorated node names)
+    don't follow it.
     """
     agent_ids = set(joint_strategy.keys())
     for i, strategy in joint_strategy.items():
         if not strategy:
             raise ValueError(f"agent {i}: strategy must contain at least one step")
-        start_node, _ = strategy[0]
-        goal_node, last_wait = strategy[-1]
-        if start_node != f"s_{i}":
-            raise ValueError(f"agent {i}: strategy must start at s_{i}, got {start_node!r}")
-        if goal_node != f"g_{i}":
-            raise ValueError(f"agent {i}: strategy must end at g_{i}, got {goal_node!r}")
+        _, last_wait = strategy[-1]
         if last_wait:
             raise ValueError(
                 f"agent {i}: waiting set at the final node must be empty, got {last_wait!r}"
@@ -207,14 +206,6 @@ def relabel_nodes(G):
     return nx.relabel_nodes(G, names_map, copy=True)
 
 
-# Relabel path nodes with dollar signs for LaTeX formatting in GUI labels.
-def relabel_path(path):
-    new_path = []
-    for n in path:
-        new_path.append(rf"${n}$")
-    return new_path
-
-
 # Relabel position keys with dollar signs for LaTeX formatting in GUI labels.
 def relabel_pos(pos):
     new_pos = {}
@@ -223,15 +214,27 @@ def relabel_pos(pos):
     return new_pos
 
 
-# generate commantry for the players' state
-def generate_text(state, other):
+# Relabel a Strategy's node names with dollar signs for LaTeX formatting.
+def relabel_strategy(strategy):
+    return [(rf"${node}$", wait_set) for node, wait_set in strategy]
+
+
+# Relabel every strategy in a JointStrategy.
+def relabel_joint_strategy(joint_strategy):
+    return {
+        agent: relabel_strategy(strategy) for agent, strategy in joint_strategy.items()
+    }
+
+
+# generate commantry for a player's state
+def generate_text(state):
 
     if state[0] == "T":
         return rf"executes task at node {state[1]} alone: {state[2]}/{state[3]}"
     if state[0] == "C":
-        return rf"cooperates with {other} at node {state[1]}: {state[2]}/{state[3]}"
+        return rf"cooperates at node {state[1]}: {state[2]}/{state[3]}"
     if state[0] == "W":
-        return rf"waits for {other} at {state[1]}: {state[2]}/{state[3]}"
+        return rf"waits at {state[1]}: {state[2]}/{state[3]}"
     if state[0] == "E":
         return rf"travels from {state[1][0]} to {state[1][1]}: {state[2]}/{state[3]}"
     if state[0] == "F":
@@ -454,7 +457,7 @@ def interpolate_paths(G, joint_strategy):
 
 # Interpolate the robot position based on its current state.
 def interpolate(robot, num, pos):
-    if robot[0] == "T" or robot[0] == "W" or robot[0] == "C" or robot[0] == "F":
+    if robot[0] in ("T", "W", "C", "F", "WI"):
         return pos[robot[1]]
     else:
         dest = (
@@ -477,17 +480,19 @@ def interpolate(robot, num, pos):
 
 
 class GraphVisualizer:
-    def __init__(self, G, pos, grid):
+    def __init__(self, G, pos, grid, k=None):
         self.grid = grid
         self.G = G
         self.pos = pos
+        self.k = k if k is not None else self._infer_k(G)
+        self.colors = get_agent_colors(self.k)
         self.create_plot()
         self.edge_colors = [EDGES_COLOR for edge in self.G.edges()]
-        self.colored1 = False
-        self.colored2 = False
         self.drawn_edges = []
 
-        # self.G=self.create_plot(G, pos)
+    @staticmethod
+    def _infer_k(G):
+        return sum(1 for node in G.nodes if str(node).startswith("s_"))
 
     def create_plot(self):
         self.G = relabel_nodes(self.G)
@@ -531,19 +536,19 @@ class GraphVisualizer:
             node: (self.pos[node][0] + 0.5, rows - 1 + self.pos[node][1] + 0.5)
             for node in self.G.nodes()
         }
+        boundary_color = {
+            rf"${node}$": self.colors[(i - 1) % len(self.colors)]
+            for i in range(1, self.k + 1)
+            for node in (f"s_{i}", f"g_{i}")
+        }
         node_colors = [
-            (
-                R1_BASE_COLOR
-                if node == r"$s_1$" or node == r"$g_1$"
-                else (
-                    R2_BASE_COLOR
-                    if node == r"$s_2$" or node == r"$g_2$"
-                    else (
-                        COOPERATION_NODES_COLOR
-                        if self.G.nodes[node]["tau_1"] > self.G.nodes[node]["tau_2"]
-                        else NODES_COLOR
-                    )
-                )
+            boundary_color.get(
+                node,
+                (
+                    COOPERATION_NODES_COLOR
+                    if node_delay(self.G, node, 1) > node_delay(self.G, node, self.k)
+                    else NODES_COLOR
+                ),
             )
             for node in self.G.nodes()
         ]
@@ -561,19 +566,18 @@ class GraphVisualizer:
         nx.draw_networkx_nodes(
             self.G, self.pos, ax=self.ax, node_size=NODE_SIZE, node_color=node_colors
         )
+        boundary_nodes = list(boundary_color.keys())
         nx.draw_networkx_nodes(
             self.G,
             self.pos,
-            nodelist=[r"$s_1$", r"$s_2$"],
+            nodelist=boundary_nodes,
             ax=self.ax,
             node_size=NODE_SIZE,
-            node_color=[R1_BASE_COLOR, R2_BASE_COLOR],
+            node_color=[boundary_color[n] for n in boundary_nodes],
             edgecolors="black",
             linewidths=1,
         )
-        labels = {
-            node: str(node) for node in [r"$s_1$", r"$s_2$", r"$g_1$", r"$g_2$"]
-        }
+        labels = {node: str(node) for node in boundary_nodes}
         nx.draw_networkx_labels(
             self.G,
             self.pos,
@@ -593,84 +597,60 @@ class GraphVisualizer:
         # return fig, ax
         # plt.show()
 
-    def set_animation(self, path1, path2):
-        path1 = relabel_path(path1["path"])
-        path2 = relabel_path(path2["path"])
-        self.state1, self.state2 = interpolate_paths(self.G, path1, path2)
+    def set_animation(self, joint_strategy):
+        relabeled = relabel_joint_strategy(joint_strategy)
+        self.strategies = relabeled
+        self.states = interpolate_paths(self.G, relabeled)
         self.ani = animation.FuncAnimation(
             self.fig,
             self.update,
             interval=SPEED,
-            frames=SPEED * max(len(self.state1), len(self.state2)),
+            frames=SPEED * max(len(s) for s in self.states.values()),
             blit=False,
             repeat=False,
         )
-        self.r1_1 = Wedge(
-            self.pos[path1[0]], ROBOT_SIZE, 0, 180, color=R1_COLOR, zorder=10
-        )  # First half
-        self.r1_2 = Wedge(
-            self.pos[path1[0]], ROBOT_SIZE, 180, 360, color=R1_COLOR, zorder=11
-        )  # Second half
-        self.r2_1 = Wedge(
-            self.pos[path2[0]], ROBOT_SIZE, 0, 180, color=R2_COLOR, zorder=11
-        )  # First half
-        self.r2_2 = Wedge(
-            self.pos[path2[0]], ROBOT_SIZE, 180, 360, color=R2_COLOR, zorder=10
-        )  # Second half
-        self.ax.add_patch(self.r1_1)
-        self.ax.add_patch(self.r1_2)
-        self.ax.add_patch(self.r2_1)
-        self.ax.add_patch(self.r2_2)
+        self.robots = {}
+        self.colored = {}
+        for agent, strategy in relabeled.items():
+            color = self.colors[(agent - 1) % len(self.colors)]
+            circle = Circle(self.pos[strategy[0][0]], ROBOT_SIZE, color=color, zorder=10)
+            self.ax.add_patch(circle)
+            self.robots[agent] = circle
+            self.colored[agent] = False
 
         self.commentry = self.ax.text(
             0,
             len(self.grid),
-            r"$r_1$",
+            "",
             fontsize=5,
             verticalalignment="bottom",
             horizontalalignment="left",
         )
 
     def update(self, num):
-        r1_state = self.state1[min(math.floor(num / SPEED), len(self.state1) - 1)]
-        r2_state = self.state2[min(math.floor(num / SPEED), len(self.state2) - 1)]
-        # print(r1_state, r2_state)
+        n_agents = len(self.states)
+        lines = [f"t={math.floor(num / SPEED)}"]
+        for agent, states in self.states.items():
+            state = states[min(math.floor(num / SPEED), len(states) - 1)]
+            color = self.colors[(agent - 1) % len(self.colors)]
 
-        if r1_state[0] == "E" and not self.colored1:
-            self.colored1 = True
-            self.draw_edge(r1_state[1], R1_COLOR, -PATH_GAP)
-        elif (
-            r1_state[0] != "E"
-            or r1_state[1][0] == r"$s_2$"
-            or r1_state[1][0] == r"$g_2$"
-        ):
-            self.colored1 = False
+            if state[0] == "E" and not self.colored[agent]:
+                self.colored[agent] = True
+                gap = PATH_GAP * (agent - (n_agents + 1) / 2)
+                self.draw_edge(state[1], color, gap)
+            elif state[0] != "E":
+                self.colored[agent] = False
 
-        if r2_state[0] == "E" and not self.colored2:
-            self.colored2 = True
-            self.draw_edge(r2_state[1], R2_COLOR, PATH_GAP)
-        elif (
-            r2_state[0] != "E"
-            or r1_state[1][0] == r"$s_1$"
-            or r1_state[1][0] == r"$g_1$"
-        ):
-            self.colored2 = False
+            x, y = interpolate(state, (num % SPEED) / SPEED, self.pos)
+            angle = 2 * math.pi * agent / max(n_agents, 1)
+            x += ROBOT_OFFSET_RADIUS * math.cos(angle)
+            y += ROBOT_OFFSET_RADIUS * math.sin(angle)
+            self.robots[agent].center = (x, y)
 
-        x1, y1 = interpolate(r1_state, (num % SPEED) / SPEED, self.pos)
-        x2, y2 = interpolate(r2_state, (num % SPEED) / SPEED, self.pos)
-        self.r1_1.set_center((x1, y1))
-        self.r1_2.set_center((x1, y1))
-        self.r2_1.set_center((x2, y2))
-        self.r2_2.set_center((x2, y2))
+            lines.append(rf"$r_{{{agent}}}$ {generate_text(state)}")
 
-        self.commentry.set_text(
-            (
-                f"t={math.floor(num / SPEED)}\n"
-                f"$r_1$ {generate_text(r1_state, r'$r_2$')}\n"
-                f"$r_2$ {generate_text(r2_state, r'$r_1$')}"
-            )
-        )
-        return self.commentry, self.r1_1, self.r1_2, self.r2_1, self.r2_2
+        self.commentry.set_text("\n".join(lines))
+        return (self.commentry, *self.robots.values())
 
     def draw_edge(self, edge, color, path_gap):
         x = [self.pos[edge[0]][0] + path_gap, self.pos[edge[1]][0] + path_gap]
@@ -679,8 +659,8 @@ class GraphVisualizer:
         self.drawn_edges.append(line)
         return line
 
-    def draw_path(self, path, color, path_gap=0):
-        edges = get_edges_in_path(path)
+    def draw_path(self, strategy, color, path_gap=0):
+        edges = get_edges_in_path(relabel_strategy(strategy))
         drawn_lines = []
         for edge in edges:
             drawn_lines.append(self.draw_edge(edge, color, path_gap))
@@ -695,10 +675,7 @@ class GraphVisualizer:
         plt.show()
 
 
-def visualize(G, pos, paths, grid):
-    # distances = {(u, v): d['tau'] for u, v, d in G.edges(data=True)}
-    # pos = nx.kamada_kawai_layout(G, dist=distances, weight='tau')
+def visualize(G, pos, joint_strategy, grid):
     vis = GraphVisualizer(G, pos, grid)
-    # print(paths)
-    vis.set_animation(paths[0], paths[1])
+    vis.set_animation(joint_strategy)
     plt.show()

@@ -7,13 +7,20 @@ social_evaluators = ["Social Sum"]
 
 
 class GUI:
-    def __init__(self, G, pos, grid, paths, args, eid):
+    def __init__(self, G, pos, grid, strategies, args, eid, bounds=None):
         self.root = tk.Tk()
-        self.vis = simulation.GraphVisualizer(G, pos, grid)
-        self.paths = paths
+        self.G = G
+        self.k = getattr(args, "num_agents", None) or GUI._infer_k(strategies)
+        self.vis = simulation.GraphVisualizer(G, pos, grid, k=self.k)
+        self.strategies = strategies
+        self.bounds = bounds or {}
         self.anim = None
         self.args = args
         self.eid = eid
+
+    @staticmethod
+    def _infer_k(strategies):
+        return max((len(s) for s in strategies.values()), default=0)
 
     def copy_to_clipboard(self, event):
         text = self.eid
@@ -21,16 +28,23 @@ class GUI:
         self.root.clipboard_append(text)
         self.root.update()  # Keeps the clipboard content after the program exits
 
+    def _format_agent_time(self, t):
+        return "stuck" if t == float("inf") else str(t)
+
     def show(self):
         self.root.title("ICMPP Simulation GUI")
         self.canvas = FigureCanvasTkAgg(self.vis.fig, master=self.root)
         self.canvas.get_tk_widget().grid(row=0, column=0, columnspan=4)
 
+        seperation = getattr(
+            self.args, "seperation", getattr(self.args, "correlation", None)
+        )
         label = tk.Label(
             text=(
                 f"Map: {self.args.map} Density: {self.args.density} "
                 f"Magnitude: {self.args.magnitude} Extent: {self.args.extent} "
-                f"Seperation: {getattr(self.args, 'seperation', getattr(self.args, 'correlation'))} EID: {self.eid}"
+                f"Seperation: {seperation} "
+                f"Agents: {self.k} EID: {self.eid}"
             ),
             fg="black",
             cursor="hand2",
@@ -38,57 +52,63 @@ class GUI:
         label.grid(row=1, column=0)
         label.bind("<Button-1>", lambda event: self.copy_to_clipboard(event))
 
-        colors = [
-            "#FFB84C",
-            "#F266AB",
-            "#A459D1",
-            "#2CD3E1",
-            "#0079FF",
-            "#00DFA2",
-            "#F6FA70",
-            "#FF0060",
-        ]
+        colors = simulation.get_agent_colors(self.k)
 
-        def on_check(var, p1, p2, i, color):
+        if self.bounds:
+            bounds_text = " | ".join(
+                f"SP{i}: " + ", ".join(str(self.bounds[i][m]) for m in sorted(self.bounds[i]))
+                for i in sorted(self.bounds)
+            )
+            bounds_label = tk.Label(
+                text=f"Optimistic SP(1..k) lower bounds per agent - {bounds_text}",
+                fg="gray",
+            )
+            bounds_label.grid(row=2, column=0, sticky="w")
+
+        def on_check(var, joint_strategy, i, color):
             if var.get():
-                if i not in drawn_paths.keys():
+                if i not in drawn_paths:
                     drawn_paths[i] = []
-                drawn_paths[i].extend(self.vis.draw_path(p1["path"], color, i * 0.02))
-                drawn_paths[i].extend(self.vis.draw_path(p2["path"], color, i * 0.02))
+                for agent, strategy in joint_strategy.items():
+                    drawn_paths[i].extend(
+                        self.vis.draw_path(strategy, color, i * 0.02)
+                    )
             else:
-                self.vis.clear_path(
-                    drawn_paths[i]
-                )  # optional: remove path if unchecked
+                self.vis.clear_path(drawn_paths[i])
                 drawn_paths[i].clear()
             self.canvas.draw()
 
-        check_states = {p: tk.BooleanVar() for p in range(len(self.paths))}
+        check_states = {p: tk.BooleanVar() for p in range(len(self.strategies))}
         drawn_paths = {}
 
-        def play_animation(p1, p2):
-            self.vis.set_animation(p1, p2)
+        def play_animation(joint_strategy):
+            self.vis.set_animation(joint_strategy)
             self.anim = self.vis.ani
             self.canvas.draw()
 
-        for i, p in enumerate(self.paths.keys()):
+        for i, name in enumerate(self.strategies.keys()):
             var = check_states[i]
+            joint_strategy = self.strategies[name]
+            times = simulation.evaluate_paths(self.G, joint_strategy)
+            times_text = ", ".join(
+                self._format_agent_time(times[agent]) for agent in sorted(times)
+            )
+            color = colors[i % len(colors)]
             cb = tk.Checkbutton(
                 self.root,
-                text=f"{p} ({self.paths[p][0]['length']},{self.paths[p][1]['length']})",
+                text=f"{name} ({times_text})",
                 variable=var,
-                fg=colors[i],
-                command=lambda v=var, p1=self.paths[p][0], p2=self.paths[p][
-                    1
-                ], index=i: on_check(v, p1, p2, index, colors[index]),
+                fg=color,
+                command=lambda v=var, s=joint_strategy, index=i, c=color: on_check(
+                    v, s, index, c
+                ),
             )
-            cb.grid(row=1 + 1 + i, column=0, sticky="w")
+            cb.grid(row=3 + i, column=0, sticky="w")
             play_button = tk.Button(
                 self.root,
                 text="Play",
-                command=lambda p1=self.paths[p][0], p2=self.paths[p][1]: play_animation(
-                    p1, p2
-                ),
+                command=lambda s=joint_strategy: play_animation(s),
             )
-            play_button.grid(row=1 + i + 1, column=0, pady=10)
+            play_button.grid(row=3 + i, column=1, pady=10)
 
         self.root.mainloop()

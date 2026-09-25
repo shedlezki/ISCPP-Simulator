@@ -2,7 +2,12 @@ import math
 
 import networkx as nx
 
-from iscpp_simulator.simulation import evaluate_paths, interpolate_paths, simulate_joint_strategy
+from iscpp_simulator.simulation import (
+    evaluate_paths,
+    interpolate,
+    interpolate_paths,
+    simulate_joint_strategy,
+)
 
 
 def add_node(G, name, k):
@@ -77,6 +82,9 @@ def test_stuck_agent_reports_indefinite_wait():
     assert ("F", "g_1", 1, 1) not in anim[1]
     assert anim[2][-1] == ("F", "g_2", 1, 1)
     assert anim[3][-1] == ("F", "g_3", 1, 1)
+
+    pos = {"s_1": (0, 0), "s_2": (0, 1), "s_3": (0, 2), "c": (1, 1)}
+    assert interpolate(anim[1][-1], 0.0, pos) == pos["c"]
 
 
 def test_revisit_forms_independent_episodes():

@@ -58,11 +58,13 @@ def test_validate_joint_strategy_allows_revisits():
     validate_joint_strategy(G, joint_strategy)  # should not raise
 
 
-def test_validate_joint_strategy_rejects_wrong_start():
+def test_validate_joint_strategy_allows_arbitrary_start_goal_names():
+    # v_0/v_last need not be literally named "s_i"/"g_i" - that's a
+    # mapf_benchmark_provider.py naming convention, not a model requirement
+    # (e.g. the visualizer's $-decorated node names must still validate).
     G = make_graph()
     joint_strategy = {1: [("c", frozenset()), ("g_1", frozenset())]}
-    with pytest.raises(ValueError):
-        validate_joint_strategy(G, joint_strategy)
+    validate_joint_strategy(G, joint_strategy)  # should not raise
 
 
 def test_validate_joint_strategy_rejects_nonempty_final_wait():
