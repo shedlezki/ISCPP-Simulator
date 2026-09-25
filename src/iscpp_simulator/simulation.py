@@ -16,7 +16,9 @@ EDGES_COLOR = "black"
 NODES_COLOR = "#BCCCDC"
 COOPERATION_NODES_COLOR = "#9AA6B2"
 LIVE_PATH_COLOR = "pink"
-GRID_SIZE = 15
+CELL_INCHES = 0.6  # figure inches per grid cell, before clamping
+MIN_FIG_INCHES = 5  # floor - keeps small grids (e.g. hand-built demos) legible
+MAX_FIG_INCHES = 12  # ceiling - keeps huge benchmark maps from overflowing the screen
 NODE_SIZE = 50
 ROBOT_SIZE = 0.1
 ROBOT_OFFSET_RADIUS = 0.15  # separates colocated agents' markers
@@ -503,9 +505,9 @@ class GraphVisualizer:
         # fig, ax = plt.subplots()
 
         rows, cols = len(self.grid), len(self.grid[0])
-        self.fig, self.ax = plt.subplots(
-            figsize=(cols / GRID_SIZE + 2, rows / GRID_SIZE + 2)
-        )
+        fig_w = min(MAX_FIG_INCHES, max(MIN_FIG_INCHES, cols * CELL_INCHES))
+        fig_h = min(MAX_FIG_INCHES, max(MIN_FIG_INCHES, rows * CELL_INCHES))
+        self.fig, self.ax = plt.subplots(figsize=(fig_w, fig_h))
         self.draw_grid_and_graph()
         # nx.draw(G, self.pos, with_labels=True)
         # nx.draw_networkx_labels(G, label_pos, labels=node_labels, font_size=10)
