@@ -1,8 +1,14 @@
+import heapq
+import itertools
+import math
+from dataclasses import dataclass, field
+from typing import Callable, Dict, FrozenSet, Hashable, List, Mapping, Tuple
+
 import networkx as nx  # type: ignore[import-untyped]
 import matplotlib.animation as animation
+import matplotlib.colors as mcolors
 from matplotlib.patches import Wedge
 import matplotlib.pyplot as plt
-import math
 
 SPEED = 25
 
@@ -20,8 +26,172 @@ ROBOT_SIZE = 0.1
 PATH_GAP = 0.05
 PATH_WIDTH = 2
 
+AGENT_COLORS = [
+    "#FFB84C",
+    "#F266AB",
+    "#A459D1",
+    "#2CD3E1",
+    "#0079FF",
+    "#00DFA2",
+    "#F6FA70",
+    "#FF0060",
+]
 
-# Relabel graph nodes with dollar signs for LaTeX formatting in GUI labels.
+
+# ---------------------------------------------------------------------------
+# k-agent strategy representation (ISCMPP, paper Section 2 "Problem Definition")
+# ---------------------------------------------------------------------------
+#
+# A strategy is no longer a bare path: it is a sequence of (node, omega) steps,
+# where omega is the set of agents this agent *explicitly* commits to waiting
+# for at that node. Coalition formation (Section 3) is derived entirely from
+# these waiting declarations via Algorithm 1 below - there is no automatic
+# "merge if colocated" behavior anymore.
+
+StrategyStep = Tuple[Hashable, FrozenSet[int]]
+Strategy = List[StrategyStep]
+JointStrategy = Dict[int, Strategy]
+
+
+def get_agent_colors(k):
+    """Return k visually distinct hex colors, one per agent."""
+    if k <= len(AGENT_COLORS):
+        return AGENT_COLORS[:k]
+    cmap = plt.get_cmap("hsv")
+    return [mcolors.to_hex(cmap(i / k)) for i in range(k)]
+
+
+def node_delay(G, v, n):
+    """tau_v(n): delay for a coalition of n synchronized agents visiting node v.
+
+    Clamped to tau_v(k) for n beyond the stored curve length - safe since
+    tau_v is required to be weakly non-increasing in n.
+    """
+    if n <= 0:
+        return 0
+    delays = G.nodes[v]["delay"]
+    return delays[min(n, len(delays)) - 1]
+
+
+def validate_joint_strategy(G, joint_strategy):
+    """Structural validation of a JointStrategy against graph G.
+
+    Node revisits within one agent's strategy are allowed (each occurrence is
+    resolved as its own independent coalition-formation episode by the
+    simulator - see simulate_joint_strategy). Raises ValueError on any
+    structural violation.
+    """
+    agent_ids = set(joint_strategy.keys())
+    for i, strategy in joint_strategy.items():
+        if not strategy:
+            raise ValueError(f"agent {i}: strategy must contain at least one step")
+        start_node, _ = strategy[0]
+        goal_node, last_wait = strategy[-1]
+        if start_node != f"s_{i}":
+            raise ValueError(f"agent {i}: strategy must start at s_{i}, got {start_node!r}")
+        if goal_node != f"g_{i}":
+            raise ValueError(f"agent {i}: strategy must end at g_{i}, got {goal_node!r}")
+        if last_wait:
+            raise ValueError(
+                f"agent {i}: waiting set at the final node must be empty, got {last_wait!r}"
+            )
+        for step_index, (node, wait_set) in enumerate(strategy):
+            for other in wait_set:
+                if other == i:
+                    raise ValueError(
+                        f"agent {i}: cannot wait for itself at step {step_index} ({node!r})"
+                    )
+                if other not in agent_ids:
+                    raise ValueError(
+                        f"agent {i}: waits for unknown agent {other} at step "
+                        f"{step_index} ({node!r})"
+                    )
+        for (node_a, _), (node_b, _) in zip(strategy, strategy[1:]):
+            if not G.has_edge(node_a, node_b):
+                raise ValueError(f"agent {i}: no edge {node_a!r}->{node_b!r} in graph")
+
+
+def _waiting_closure(agent, wait_sets):
+    """Reachability set of `agent` in WDG_v (waiting-dependency graph), self included."""
+    seen = {agent}
+    stack = [agent]
+    while stack:
+        current = stack.pop()
+        for successor in wait_sets.get(current, ()):
+            if successor not in seen:
+                seen.add(successor)
+                stack.append(successor)
+    return frozenset(seen)
+
+
+def compute_local_departure_times(arrivals, wait_sets, delay_fn):
+    """Algorithm 1 (paper Section 3): local coalition formation at a single node.
+
+    arrivals: agent_id -> arrival time r_i at this node.
+    wait_sets: agent_id -> omega_i, the set of agents this agent explicitly
+        waits for at this node (missing keys default to an empty set).
+    delay_fn: n -> tau_v(n), weakly non-increasing in n.
+
+    Returns agent_id -> departure time D_i. D_i == float('inf') means the
+    agent waits indefinitely (its coalition is not locally stable and no
+    committed partner ever actually departs with it).
+    """
+    agents = list(arrivals.keys())
+    for i, omega in wait_sets.items():
+        for j in omega:
+            if j not in arrivals:
+                raise ValueError(
+                    f"agent {i} waits for agent {j}, which is not present in arrivals"
+                )
+
+    closure = {i: _waiting_closure(i, wait_sets) for i in agents}
+    t_ready = {i: max(arrivals[j] for j in closure[i]) for i in agents}
+    D = {i: t_ready[i] + delay_fn(len(closure[i])) for i in agents}
+    C_star: Dict[int, FrozenSet[int]] = {i: closure[i] for i in agents}
+
+    # Process agents in ascending (t_ready, agent_id) order - ties broken by
+    # agent_id, an assumption the paper does not specify. Earlier-ready
+    # agents/coalitions are always fully resolved (extension + stability)
+    # before a later agent's computation can depend on them.
+    order = sorted(agents, key=lambda a: (t_ready[a], a))
+    for i in order:
+        original_closure = closure[i]  # Omega_i, fixed - NOT C_star[i], which may grow
+        a_post = sorted(
+            (
+                j
+                for j in agents
+                if j not in original_closure and t_ready[i] <= t_ready[j] <= D[i]
+            ),
+            key=lambda a: (t_ready[a], a),
+        )
+        a_post_set = set(a_post)
+        pending: FrozenSet[int] = frozenset()
+        for j in a_post:
+            # Pending accumulates monotonically across rejected candidates and
+            # resets only on acceptance - this is what lets "a3 alone: not
+            # worth it" become "a3+a4 together: worth it" without losing a3.
+            pending = pending | closure[j]
+            candidate = C_star[i] | pending
+            if t_ready[j] + delay_fn(len(candidate)) <= D[i]:
+                C_star[i] = candidate
+                D[i] = t_ready[j] + delay_fn(len(candidate))
+                for m in C_star[i] & a_post_set:
+                    C_star[m] = C_star[i]
+                    D[m] = D[i]
+                pending = frozenset()
+
+        # Stability sweep for a_i's (possibly extended) coalition: if any
+        # member strictly prefers an earlier departure, a_i's expectation of
+        # cooperating with it is not honored, and a_i waits indefinitely.
+        if any(D[j] < D[i] for j in C_star[i] if j != i):
+            D[i] = float("inf")
+            for m in C_star[i] & a_post_set:
+                D[m] = float("inf")
+
+    return D
+
+
+
 def relabel_nodes(G):
     names_map = {}
     for n in G.nodes():

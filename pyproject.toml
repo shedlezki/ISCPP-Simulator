@@ -35,6 +35,9 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
 [project.scripts]
 iscpp-simulator = "iscpp_simulator.main:main"
 
