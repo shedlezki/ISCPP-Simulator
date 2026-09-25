@@ -65,6 +65,7 @@ def get_graph_with_timeout(
     size=None,
     data_dir=None,
     scenario_dir=None,
+    k=2,
 ):
     if size is not None:
         map_name = get_random_map_by_size(size, data_dir)
@@ -81,6 +82,7 @@ def get_graph_with_timeout(
                 use_scenario=scenario_name is not None,
                 data_dir=data_dir,
                 scenario_dir=scenario_dir,
+                k=k,
             )
             try:
                 G, pos, grid = future.result(timeout=timeout)
@@ -124,7 +126,28 @@ def _get_grid_graph(grid):
     return G, pos
 
 
-# Generate node weights for the time it takes each player to traverse the node.
+# tau_v(n) for n=1..k at a cooperation node: tau_v(1)=standard_time, weakly
+# non-increasing down to (at least) cooperation_time. `even` makes every
+# coalition size n>=2 share cooperation_time; otherwise a randomized curve,
+# sorted descending so it stays weakly non-increasing.
+def _make_delay_curve(k, standard_time, cooperation_time, even):
+    if k <= 1:
+        return [standard_time]
+    if even:
+        return [standard_time] + [cooperation_time] * (k - 1)
+    tail = sorted(
+        (random.randrange(cooperation_time, standard_time + 1) for _ in range(k - 1)),
+        reverse=True,
+    )
+    return [standard_time] + tail
+
+
+def _boundary_nodes(k):
+    return {f"s_{i}" for i in range(1, k + 1)} | {f"g_{i}" for i in range(1, k + 1)}
+
+
+# Generate node delay curves (tau_v(n) for n=1..k) for the time it takes a
+# coalition of n players to traverse the node.
 # The ratio parameter determines the probability of a node being a cooperation node.
 # The even parameter determines whether cooperation nodes share the same waiting time.
 # The standard_time parameter determines non-cooperation node traversal time.
@@ -132,33 +155,26 @@ def _get_grid_graph(grid):
 # The use_scenario parameter selects scenario-defined or randomly generated cooperation nodes.
 def _add_node_weights(
     G: nx.Graph,
+    k,
     ratio=0.5,
     even=True,
     standard_time=10,
     cooperation_time=1,
     use_scenario=False,
 ):
+    boundary = _boundary_nodes(k)
     for node in G.nodes:
-        if node == "s_1" or node == "s_2" or node == "g_1" or node == "g_2":
-            t1 = 0
-            t2 = 0
+        if node in boundary:
+            G.nodes[node]["delay"] = [0] * k
         elif (random.random() <= ratio and not use_scenario) or (
             use_scenario and G.nodes[node]["coop"]
         ):
-            if even:
-                t1 = standard_time
-                t2 = cooperation_time
-            else:
-                t1 = standard_time
-                t2 = random.randrange(cooperation_time, standard_time)
+            G.nodes[node]["delay"] = _make_delay_curve(
+                k, standard_time, cooperation_time, even
+            )
         else:
-            t1 = standard_time
-            if use_scenario:
-                t1 = cooperation_time
-            t2 = t1
-
-        G.nodes[node]["tau_1"] = max(t1, t2)
-        G.nodes[node]["tau_2"] = min(t1, t2)
+            flat = cooperation_time if use_scenario else standard_time
+            G.nodes[node]["delay"] = [flat] * k
     return G
 
 
@@ -188,23 +204,21 @@ def _random_cell_in_grid(grid):
             return (i, j)
 
 
-def _generate_scenario_points(grid, length, s=None, g=None, distance=-1):
+def _generate_scenario_points(grid, length, s=None, g=None, distance=-1, avoid=frozenset()):
     if s is None or g is None or distance == -1:
         start_x, start_y = _random_cell_in_grid(grid)
         goal_x, goal_y = _random_cell_within_manhattan(grid, start_x, start_y, length)
-    else:
-        start_x, start_y = s
-        while (start_x, start_y) == g or (start_x, start_y) == s:
-            start_x, start_y = _random_cell_within_manhattan(grid, s[0], s[1], distance)
-        goal_x, goal_y = start_x, start_y
-        while (
-            (start_x, start_y) == (goal_x, goal_y)
-            or (goal_x, goal_y) == g
-            or (goal_x, goal_y) == s
-        ):
-            goal_x, goal_y = _random_cell_within_manhattan(grid, g[0], g[1], distance)
+        return (start_x, start_y), (goal_x, goal_y)
 
-    return (start_x, start_y), (goal_x, goal_y)
+    start = s
+    while start in avoid:
+        start = _random_cell_within_manhattan(grid, s[0], s[1], distance)
+
+    goal = start
+    while goal == start or goal in avoid:
+        goal = _random_cell_within_manhattan(grid, g[0], g[1], distance)
+
+    return start, goal
 
 
 # Get starting and target nodes from the given scenario line, or a random line.
@@ -238,88 +252,42 @@ def _add_or_set(G, pos, node, name):
 
 
 # adding starting and target nodes to the graph from a given scene file
-def _add_start_and_target_nodes(G: nx.Graph, pos, scene_file, line1=-1, line2=-1):
-    s1, g1 = _get_scenario_points(scene_file, line1)
-    s2, g2 = s1, g1
+def _add_start_and_target_nodes(G: nx.Graph, pos, scene_file, k=2, lines=None):
+    lines = list(lines) if lines is not None else []
+    lines += [-1] * (k - len(lines))
 
-    while s2 == s1 and g2 == g1:
-        s2, g2 = _get_scenario_points(scene_file, line2)
-
-    G, pos = _add_or_set(G, pos, s1, "s_1")
-    G, pos = _add_or_set(G, pos, s2, "s_2")
-    G, pos = _add_or_set(G, pos, g1, "g_1")
-    G, pos = _add_or_set(G, pos, g2, "g_2")
+    occupied = set()
+    for i in range(1, k + 1):
+        s, g = _get_scenario_points(scene_file, lines[i - 1])
+        while s == g or s in occupied or g in occupied:
+            s, g = _get_scenario_points(scene_file, -1)
+        occupied.add(s)
+        occupied.add(g)
+        G, pos = _add_or_set(G, pos, s, f"s_{i}")
+        G, pos = _add_or_set(G, pos, g, f"g_{i}")
 
     return G, pos
 
 
 # Add generated starting and target nodes following distance and length constraints.
-def _generate_and_add_start_and_target_nodes(G: nx.Graph, pos, grid, distance, length):
+# Every agent i>1's start/goal is sampled relative to agent 1's (not chained
+# to agent i-1), so `distance`'s meaning doesn't drift with k.
+def _generate_and_add_start_and_target_nodes(G: nx.Graph, pos, grid, distance, length, k=2):
     s1, g1 = _generate_scenario_points(grid, length=length)
-    s2, g2 = _generate_scenario_points(
-        grid, length=length, s=s1, g=g1, distance=distance
-    )
-
     G, pos = _add_or_set(G, pos, s1, "s_1")
-    G, pos = _add_or_set(G, pos, s2, "s_2")
     G, pos = _add_or_set(G, pos, g1, "g_1")
-    G, pos = _add_or_set(G, pos, g2, "g_2")
+
+    occupied = {s1, g1}
+    for i in range(2, k + 1):
+        si, gi = _generate_scenario_points(
+            grid, length=length, s=s1, g=g1, distance=distance, avoid=occupied
+        )
+        occupied.add(si)
+        occupied.add(gi)
+        G, pos = _add_or_set(G, pos, si, f"s_{i}")
+        G, pos = _add_or_set(G, pos, gi, f"g_{i}")
 
     return G, pos
-
-
-def _draw_grid_and_graph(grid, G, pos):
-    import matplotlib.pyplot as plt
-
-    rows, cols = len(grid), len(grid[0])
-    fig, ax = plt.subplots(figsize=(cols / 5, rows / 5))
-
-    # Draw the grid: obstacles in black, free in white
-    for i in range(rows):
-        for j in range(cols):
-            color = "white" if grid[i][j] == 0 else "black"
-            ax.add_patch(
-                plt.Rectangle(
-                    (j, rows - 1 - i),
-                    1,
-                    1,
-                    facecolor=color,
-                    edgecolor="gray",
-                    linewidth=0.2,
-                )
-            )
-
-    # Graph node positions centered in each cell
-    pos = {
-        node: (pos[node][0] + 0.5, rows - 1 + pos[node][1] + 0.5) for node in G.nodes()
-    }
-    node_colors = [
-        (
-            "purple"
-            if node == "s_1" or node == "g_1"
-            else (
-                "green"
-                if node == "s_2" or node == "g_2"
-                else (
-                    "blue"
-                    if G.nodes[node]["tau_1"] > G.nodes[node]["tau_2"]
-                    else "black"
-                )
-            )
-        )
-        for node in G.nodes()
-    ]
-
-    # Draw graph edges and nodes on top
-    nx.draw_networkx_edges(G, pos, ax=ax, width=0.5, edge_color="red", alpha=0.7)
-    nx.draw_networkx_nodes(G, pos, ax=ax, node_size=8, node_color=node_colors)
-
-    ax.set_xlim(0, cols)
-    ax.set_ylim(0, rows)
-    ax.set_aspect("equal")
-    ax.axis("off")
-    plt.tight_layout()
-    plt.show()
 
 
 # generates a graphs with the provided paramters
@@ -334,6 +302,7 @@ def get_graph(
     use_scenario=False,
     data_dir=None,
     scenario_dir=None,
+    k=2,
 ):
     grid = _map_file_to_grid(_map_file(map_name, data_dir))
 
@@ -342,44 +311,16 @@ def get_graph(
 
     if use_scenario:
         G, pos = _add_start_and_target_nodes(
-            G, pos, _scenario_file(map_name, scene, scenario_dir)
+            G, pos, _scenario_file(map_name, scene, scenario_dir), k=k
         )
     else:
         G, pos = _generate_and_add_start_and_target_nodes(
-            G, pos, grid, distance, length
+            G, pos, grid, distance, length, k=k
         )
 
-    G = _add_node_weights(G, ratio, True, coopertion_strength, 1, use_scenario)
+    G = _add_node_weights(G, k, ratio, True, coopertion_strength, 1, use_scenario)
 
     return G, pos, grid
-
-
-# not used in the main code
-def generate_weights(G):
-    labels = {}
-    for n in G.nodes():
-        labels[n] = f"v_{n}"
-    v_s1, v_s2, v_g1, v_g2 = random.sample(list(G.nodes()), k=4)
-    labels[v_s1] = "s_1"
-    labels[v_s2] = "s_2"
-    labels[v_g1] = "g_1"
-    labels[v_g2] = "g_2"
-    G = nx.relabel_nodes(G, labels)
-    for node in G.nodes():
-        if node == "s_1" or node == "s_2" or node == "g_1" or node == "g_2":
-            t1 = 0
-            t2 = 0
-        elif random.choice([True, False]):
-            t1 = random.randrange(10)
-            t2 = random.randrange(10)
-        else:
-            t1 = random.randrange(10)
-            t2 = t1
-        G.nodes[node]["tau_1"] = max(t1, t2)
-        G.nodes[node]["tau_2"] = min(t1, t2)
-    for u, v, data in G.edges(data=True):
-        data["tau"] = random.randrange(10)
-    return G
 
 
 if __name__ == "__main__":
@@ -387,12 +328,13 @@ if __name__ == "__main__":
 
     map_name = "empty-8-8"
     scene = "even-1"
+    k = 2
 
     grid = _map_file_to_grid(_map_file(map_name))
     G, pos = _get_grid_graph(grid)
     G, pos = _add_start_and_target_nodes(
-        G, pos, _scenario_file(map_name, scene)
+        G, pos, _scenario_file(map_name, scene), k=k
     )
-    G = _add_node_weights(G, 0.5, True, 3, 1)
+    G = _add_node_weights(G, k, 0.5, True, 3, 1)
 
     simulation.visualize(G, pos, None, grid)
