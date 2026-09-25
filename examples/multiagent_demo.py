@@ -35,15 +35,18 @@ def build_graph():
     G = nx.DiGraph()
     pos = {}
 
-    def add(name, x, y, delay):
+    # GraphVisualizer expects positions as (col, -row), 0-indexed with row 0
+    # at the top - the same convention mapf_benchmark_provider._get_grid_graph
+    # uses for real maps - so node markers land centered in their grid cell.
+    def add(name, col, row, delay):
         G.add_node(name, delay=delay)
-        pos[name] = (x, y)
+        pos[name] = (col, -row)
 
-    for i, y in ((1, 2), (2, 1), (3, 0)):
-        add(f"s_{i}", 0, y, [0, 0, 0])
-        add(f"g_{i}", 7, y, [0, 0, 0])
+    for i, row in ((1, 0), (2, 1), (3, 2)):
+        add(f"s_{i}", 0, row, [0, 0, 0])
+        add(f"g_{i}", 7, row, [0, 0, 0])
     add("c", 3, 1, [10, 4, 3])  # tau_v(n): solo=10, pair=4, trio=3
-    add("mid", 3, 2, [0, 0, 0])  # detour node, used by the "Revisit" scenario
+    add("mid", 3, 0, [0, 0, 0])  # detour node (above c), used by "Revisit"
 
     for u, v, tau in [
         ("s_1", "c", 4),
