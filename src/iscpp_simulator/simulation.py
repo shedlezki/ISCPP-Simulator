@@ -17,8 +17,9 @@ NODES_COLOR = "#BCCCDC"
 COOPERATION_NODES_COLOR = "#9AA6B2"
 LIVE_PATH_COLOR = "pink"
 CELL_INCHES = 0.6  # figure inches per grid cell, before clamping
-MIN_FIG_INCHES = 5  # floor - keeps small grids (e.g. hand-built demos) legible
-MAX_FIG_INCHES = 12  # ceiling - keeps huge benchmark maps from overflowing the screen
+MIN_FIG_INCHES = 5  # floor on the figure's longer side
+MAX_FIG_INCHES = 12  # ceiling on the figure's longer side
+MIN_FIG_DIM_INCHES = 3  # floor on EACH side - keeps flat/tall grids from becoming slivers
 NODE_SIZE = 50
 ROBOT_SIZE = 0.1
 ROBOT_OFFSET_RADIUS = 0.15  # separates colocated agents' markers
@@ -505,8 +506,18 @@ class GraphVisualizer:
         # fig, ax = plt.subplots()
 
         rows, cols = len(self.grid), len(self.grid[0])
-        fig_w = min(MAX_FIG_INCHES, max(MIN_FIG_INCHES, cols * CELL_INCHES))
-        fig_h = min(MAX_FIG_INCHES, max(MIN_FIG_INCHES, rows * CELL_INCHES))
+        fig_w, fig_h = cols * CELL_INCHES, rows * CELL_INCHES
+        # Scale uniformly first, to preserve the grid's aspect ratio (avoids
+        # letterboxing a non-square grid into a square figure, which would
+        # otherwise waste most of the canvas as blank space around a sliver).
+        longest = max(fig_w, fig_h)
+        if longest < MIN_FIG_INCHES:
+            fig_w, fig_h = fig_w * MIN_FIG_INCHES / longest, fig_h * MIN_FIG_INCHES / longest
+        elif longest > MAX_FIG_INCHES:
+            fig_w, fig_h = fig_w * MAX_FIG_INCHES / longest, fig_h * MAX_FIG_INCHES / longest
+        # Only then floor each side independently, accepting minor aspect
+        # distortion in extreme cases so a very flat/tall grid stays legible.
+        fig_w, fig_h = max(fig_w, MIN_FIG_DIM_INCHES), max(fig_h, MIN_FIG_DIM_INCHES)
         self.fig, self.ax = plt.subplots(figsize=(fig_w, fig_h))
         self.draw_grid_and_graph()
         # nx.draw(G, self.pos, with_labels=True)
