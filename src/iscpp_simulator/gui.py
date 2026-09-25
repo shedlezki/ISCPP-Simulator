@@ -49,7 +49,7 @@ class GUI:
             fg="black",
             cursor="hand2",
         )
-        label.grid(row=1, column=0)
+        label.grid(row=1, column=0, columnspan=4, sticky="w")
         label.bind("<Button-1>", lambda event: self.copy_to_clipboard(event))
 
         colors = simulation.get_agent_colors(self.k)
@@ -63,7 +63,7 @@ class GUI:
                 text=f"Optimistic SP(1..k) lower bounds per agent - {bounds_text}",
                 fg="gray",
             )
-            bounds_label.grid(row=2, column=0, sticky="w")
+            bounds_label.grid(row=2, column=0, columnspan=4, sticky="w")
 
         def on_check(var, joint_strategy, i, color):
             if var.get():
