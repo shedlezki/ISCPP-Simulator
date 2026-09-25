@@ -136,6 +136,14 @@ def compute_local_departure_times(arrivals, wait_sets, delay_fn):
     agent waits indefinitely (its coalition is not locally stable and no
     committed partner ever actually departs with it).
     """
+    D, _C_star = _resolve_local_coalitions(arrivals, wait_sets, delay_fn)
+    return D
+
+
+def _resolve_local_coalitions(arrivals, wait_sets, delay_fn):
+    """Same as compute_local_departure_times, but also returns each agent's
+    resolved coalition C*_i (used by the joint simulator to size tau_v(|C*|)
+    and to report who an agent actually ends up with)."""
     agents = list(arrivals.keys())
     for i, omega in wait_sets.items():
         for j in omega:
@@ -188,7 +196,7 @@ def compute_local_departure_times(arrivals, wait_sets, delay_fn):
             for m in C_star[i] & a_post_set:
                 D[m] = float("inf")
 
-    return D
+    return D, C_star
 
 
 
@@ -228,185 +236,220 @@ def generate_text(state, other):
         return rf"travels from {state[1][0]} to {state[1][1]}: {state[2]}/{state[3]}"
     if state[0] == "F":
         return "reached target"
+    if state[0] == "WI":
+        return rf"waits indefinitely at {state[1]}"
 
 
-# get all edges in the path
-def get_edges_in_path(path):
-    edges = []
-    p = relabel_path(path)
-    for i in range(len(p) - 1):
-        if p[i + 1].startswith("$WAIT"):
-            edges.append((p[i], p[i + 2]))
-        elif p[i].startswith("$WAIT"):
-            pass
+# get all edges traversed by a Strategy (sequence of (node, omega) steps)
+def get_edges_in_path(strategy):
+    nodes = [node for node, _omega in strategy]
+    return list(zip(nodes, nodes[1:]))
+
+
+# ---------------------------------------------------------------------------
+# Global joint simulator (paper Section 3.1 "Total Path Time")
+# ---------------------------------------------------------------------------
+#
+# Algorithm 1 is a batch computation: it needs a *closed* set of arrivals at
+# a node before it can resolve. Node revisits mean there's no static per-node
+# visitor set to wait for - a node's participant list for a given episode has
+# to be discovered dynamically, from the actual timing of the one concrete
+# execution being simulated.
+#
+# Why this is still safe to compute correctly online: in Algorithm 1, agent
+# a_j can only ever be a candidate post-readiness extension for a_i if
+# t_ready_j <= D_i, and t_ready_j >= arrival_j always (readiness is a max
+# over arrival times, including its own). So once every event in the global
+# queue up to some time T has been processed, we know with certainty that no
+# not-yet-arrived agent can have t_ready_j <= T - meaning any pending agent
+# at any node whose *currently computed* tentative D_i <= T can be finalized
+# immediately: nothing still in the future could possibly change that
+# result. This resolves each node's episodes purely from causal/temporal
+# order, with no precomputed visitor set at all - which also handles
+# revisits for free (a later, unrelated pass through the same node is just a
+# new episode, opened after the previous one closed).
+
+
+@dataclass
+class SimulationResult:
+    arrival: Dict[int, List[float]] = field(default_factory=dict)
+    departure: Dict[int, List[float]] = field(default_factory=dict)
+    coalition: Dict[int, List[FrozenSet[int]]] = field(default_factory=dict)
+    finished_at: Dict[int, float] = field(default_factory=dict)
+    stuck_step: Dict[int, int] = field(default_factory=dict)
+
+
+def simulate_joint_strategy(G, joint_strategy):
+    """Execute a JointStrategy end to end, resolving Algorithm 1 at every
+    node visit (episode) as it becomes safe to do so. Returns a
+    SimulationResult with per-agent, per-strategy-step arrival/departure/
+    coalition, plus finished_at / stuck_step for agents that do/don't reach
+    their target.
+    """
+    validate_joint_strategy(G, joint_strategy)
+
+    result = SimulationResult(
+        arrival={i: [None] * len(s) for i, s in joint_strategy.items()},
+        departure={i: [None] * len(s) for i, s in joint_strategy.items()},
+        coalition={i: [None] * len(s) for i, s in joint_strategy.items()},
+    )
+
+    counter = itertools.count()
+    queue: List[Tuple[float, int, int, int]] = []  # (time, seq, agent, step)
+
+    # Step 0 (s_i) is exempt from coalition formation: departure from an
+    # agent's own start node is defined to be 0 unconditionally (paper
+    # Section 3.1), independent of anyone else's presence there.
+    for agent, strategy in joint_strategy.items():
+        result.arrival[agent][0] = 0.0
+        result.departure[agent][0] = 0.0
+        result.coalition[agent][0] = frozenset({agent})
+        if len(strategy) == 1:
+            result.finished_at[agent] = 0.0
         else:
-            edges.append((p[i], p[i + 1]))
-    return edges
+            node0, node1 = strategy[0][0], strategy[1][0]
+            edge_tau = G.edges[node0, node1]["tau"]
+            heapq.heappush(queue, (edge_tau, next(counter), agent, 1))
+
+    # node -> {agent: (arrival_time, step_index)}, the currently-open episode
+    pending: Dict[Hashable, Dict[int, Tuple[float, int]]] = {}
+
+    def finalize_sweep(horizon):
+        """Finalize every pending agent whose tentative departure <= horizon.
+        Loops since a finalization can push a new event that immediately
+        unlocks another finalization elsewhere.
+
+        An occupant's waiting closure may reach an agent who hasn't arrived
+        at this node yet (that's the normal, expected case - it's exactly
+        why they're waiting). Such an occupant's readiness time isn't
+        determinable yet, so it - and, transitively, anyone whose own
+        closure passes through it - must be excluded from this round's
+        Algorithm 1 run entirely, not just barred from finalizing: letting
+        an "incomplete" agent participate in someone else's post-readiness
+        extension would silently use its not-yet-final data.
+        """
+        progressed = True
+        while progressed:
+            progressed = False
+            for node in list(pending.keys()):
+                occupants = pending[node]
+                if not occupants:
+                    del pending[node]
+                    continue
+                arrivals = {a: t for a, (t, _s) in occupants.items()}
+                wait_sets = {
+                    a: joint_strategy[a][step][1] for a, (_t, step) in occupants.items()
+                }
+                present = set(arrivals.keys())
+                complete = {
+                    a for a in occupants if _waiting_closure(a, wait_sets) <= present
+                }
+                if not complete:
+                    continue
+                sub_arrivals = {a: arrivals[a] for a in complete}
+                sub_wait_sets = {a: wait_sets[a] for a in complete}
+                tentative_D, tentative_C = _resolve_local_coalitions(
+                    sub_arrivals, sub_wait_sets, lambda n, v=node: node_delay(G, v, n)
+                )
+                for agent in list(complete):
+                    d_i = tentative_D[agent]
+                    if d_i > horizon:
+                        continue
+                    arrival_time, step = occupants.pop(agent)
+                    result.arrival[agent][step] = arrival_time
+                    result.departure[agent][step] = d_i
+                    result.coalition[agent][step] = tentative_C[agent]
+                    progressed = True
+                    strategy = joint_strategy[agent]
+                    if d_i == float("inf"):
+                        result.stuck_step[agent] = step
+                    elif step + 1 == len(strategy):
+                        result.finished_at[agent] = d_i
+                    else:
+                        node_here, node_next = strategy[step][0], strategy[step + 1][0]
+                        edge_tau = G.edges[node_here, node_next]["tau"]
+                        heapq.heappush(
+                            queue, (d_i + edge_tau, next(counter), agent, step + 1)
+                        )
+                if not occupants:
+                    del pending[node]
+
+    while queue:
+        time, _seq, agent, step = heapq.heappop(queue)
+        node = joint_strategy[agent][step][0]
+        pending.setdefault(node, {})[agent] = (time, step)
+        horizon = queue[0][0] if queue else float("inf")
+        finalize_sweep(horizon)
+
+    # Termination: the queue is permanently empty, so no future arrival can
+    # ever occur anywhere - finalize everyone still pending, unconditionally.
+    finalize_sweep(float("inf"))
+
+    # Anyone still left in `pending` at this point is permanently
+    # "incomplete": directly or transitively waiting for an agent that will
+    # never arrive here (e.g. stuck itself, elsewhere). Algorithm 1 can
+    # never resolve them - they simply wait indefinitely.
+    for node, occupants in list(pending.items()):
+        for agent, (arrival_time, step) in occupants.items():
+            wait_set = joint_strategy[agent][step][1]
+            result.arrival[agent][step] = arrival_time
+            result.departure[agent][step] = float("inf")
+            result.coalition[agent][step] = _waiting_closure(agent, {agent: wait_set})
+            result.stuck_step[agent] = step
+    pending.clear()
+
+    return result
 
 
-# Simulate the path execution and generate robot states for each time step.
-def interpolate_paths(G, path1, path2):
-    state1 = []
-    state2 = []
-    t1 = 0
-    t2 = 0
-    node1 = 0
-    node2 = 0
-    while node1 < len(path1) or node2 < len(path2):
-        if node1 < len(path1) - 1:
-            # print(path1[node1], path1[node1+1],path1[node1+2])
-            if path1[node1 + 1].startswith("$WAIT_"):
-                next_node = node1 + 2
-                # print("OOO")
+def evaluate_paths(G, joint_strategy):
+    """Total travel time for every agent under a JointStrategy.
+
+    Returns agent_id -> time reached its target, or float('inf') if it
+    waits indefinitely and never reaches it.
+    """
+    result = simulate_joint_strategy(G, joint_strategy)
+    return {i: result.finished_at.get(i, float("inf")) for i in joint_strategy}
+
+
+def _build_anim_states(G, strategy, result, agent):
+    states = []
+    n_steps = len(strategy)
+    for step in range(n_steps - 1):
+        node_here, node_next = strategy[step][0], strategy[step + 1][0]
+        edge_len = G.edges[node_here, node_next]["tau"]
+        for i in range(edge_len):
+            states.append(("E", (node_here, node_next), i + 1, edge_len))
+
+        arrival = result.arrival[agent][step + 1]
+        departure = result.departure[agent][step + 1]
+        if departure == float("inf"):
+            states.append(("WI", node_next, 1, 1))
+            return states
+
+        coalition = result.coalition[agent][step + 1]
+        exec_len = node_delay(G, node_next, len(coalition))
+        wait_len = int(round(departure - arrival - exec_len))
+        for i in range(wait_len):
+            states.append(("W", node_next, i + 1, wait_len))
+        for i in range(exec_len):
+            if len(coalition) > 1:
+                states.append(("C", node_next, i + 1, exec_len))
             else:
-                next_node = node1 + 1
-            next1 = (
-                t1
-                + G.edges[(path1[node1], path1[next_node])]["tau"]
-                + G.nodes[path1[next_node]]["tau_1"]
-            )
-            if node1 + 2 < len(path1) and path1[node1 + 2].startswith("$WAIT_"):
-                next1 += int(path1[node1 + 2][len("$WAIT_"): -1])
-            if (
-                node1 + 1 < len(path1)
-                and path1[node1 + 1].startswith("$WAIT_")
-                and node1 == 0
-            ):
-                next1 += int(path1[node1 + 1][len("$WAIT_"): -1])
-        else:
-            next1 = float("inf")
+                states.append(("T", node_next, i + 1, exec_len))
 
-        if node2 < len(path2) - 1:
+    if agent in result.finished_at:
+        states.append(("F", strategy[-1][0], 1, 1))
+    return states
 
-            next_node = (
-                (node2 + 1)
-                if not path2[node2 + 1].startswith("$WAIT_")
-                else (node2 + 2)
-            )
-            next2 = (
-                t2
-                + G.edges[(path2[node2], path2[next_node])]["tau"]
-                + G.nodes[path2[next_node]]["tau_1"]
-            )
-            if node2 + 2 < len(path2) and path2[node2 + 2].startswith("$WAIT_"):
-                next2 += int(path2[node2 + 2][len("$WAIT_"): -1])
-            if (
-                node2 + 1 < len(path2)
-                and path2[node2 + 1].startswith("$WAIT_")
-                and node2 == 0
-            ):
-                next2 += int(path2[node2 + 1][len("$WAIT_"): -1])
-        else:
-            next2 = float("inf")
 
-        if next1 <= next2 and node1 < len(path1):
-            if node1 < len(path1) - 1:
-                next_node = (
-                    (node1 + 1)
-                    if not path1[node1 + 1].startswith("$WAIT_")
-                    else (node1 + 2)
-                )
-                edge_len = G.edges[(path1[node1], path1[next_node])]["tau"]
-                exec_len = G.nodes[path1[next_node]]["tau_1"]
-
-                next_wait_len = (
-                    int(path1[node1 + 2][len("$WAIT_"): -1])
-                    if node1 + 2 < len(path1) and path1[node1 + 2].startswith("$WAIT_")
-                    else 0
-                )
-                wait_len = (
-                    int(path1[node1 + 1][len("$WAIT_"): -1])
-                    if node1 + 1 < len(path1)
-                    and path1[node1 + 1].startswith("$WAIT_")
-                    and node1 == 0
-                    else 0
-                )
-                for i in range(wait_len):
-                    state1.append(("W", path1[node1], i + 1, wait_len))
-                for i in range(edge_len):
-                    state1.append(
-                        ("E", (path1[node1], path1[next_node]), (i + 1), edge_len)
-                    )
-                for i in range(next_wait_len):
-                    state1.append(("W", path1[node1 + 1], i + 1, next_wait_len))
-                for i in range(exec_len):
-                    state1.append(("T", path1[next_node], (i + 1), exec_len))
-            t1 = next1
-            node1 += (
-                1
-                if not (
-                    node1 + 1 < len(path1) and path1[node1 + 1].startswith("$WAIT_")
-                )
-                else 2
-            )
-
-        else:
-            if node2 < len(path2) - 1:
-                next_node = (
-                    (node2 + 1)
-                    if not path2[node2 + 1].startswith("$WAIT_")
-                    else node2 + 2
-                )
-                edge_len = G.edges[(path2[node2], path2[next_node])]["tau"]
-                exec_len = G.nodes[path2[next_node]]["tau_1"]
-                next_wait_len = (
-                    int(path2[node2 + 2][len("$WAIT_"): -1])
-                    if node2 + 2 < len(path2) and path2[node2 + 2].startswith("$WAIT_")
-                    else 0
-                )
-                wait_len = (
-                    int(path2[node2 + 1][len("$WAIT_"): -1])
-                    if node2 + 1 < len(path2)
-                    and path2[node2 + 1].startswith("$WAIT_")
-                    and node2 == 0
-                    else 0
-                )
-                for i in range(wait_len):
-                    state2.append(("W", path2[node2], i + 1, wait_len))
-                for i in range(edge_len):
-                    state2.append(
-                        ("E", (path2[node2], path2[next_node]), (i + 1), edge_len)
-                    )
-                for i in range(next_wait_len):
-                    state2.append(("W", path2[node2 + 1], i + 1, next_wait_len))
-                for i in range(exec_len):
-                    state2.append(("T", path2[next_node], (i + 1), exec_len))
-            t2 = next2
-            node2 += (
-                1
-                if not (
-                    node2 + 1 < len(path2) and path2[node2 + 1].startswith("$WAIT_")
-                )
-                else 2
-            )
-
-        if node2 < len(path2) and node1 < len(path1) and path1[node1] == path2[node2]:
-            if (
-                abs(t2 - t1)
-                < G.nodes[path1[node1]]["tau_1"] - G.nodes[path1[node1]]["tau_2"]
-            ):
-                exec_len = G.nodes[path2[node2]]["tau_2"]
-                wait_len = abs(t2 - t1)
-                state1 = state1[: len(state1) - G.nodes[path2[node2]]["tau_1"]]
-                state2 = state2[: len(state2) - G.nodes[path2[node2]]["tau_1"]]
-                if t2 > t1:
-                    for i in range(wait_len):
-                        state1.append(("W", path2[node2], (i + 1), wait_len))
-                else:
-                    for i in range(wait_len):
-                        state2.append(("W", path2[node2], (i + 1), wait_len))
-
-                for i in range(exec_len):
-                    state1.append(("C", path1[node1], (i + 1), exec_len))
-                    state2.append(("C", path1[node1], (i + 1), exec_len))
-
-                t1 = (
-                    t1 - G.nodes[path1[node1]]["tau_1"] + G.nodes[path1[node1]]["tau_2"]
-                )
-                t2 = t1
-    state1.append(("F", path1[node1 - 1], 1, 1))
-    state2.append(("F", path2[node2 - 1], 1, 1))
-    return state1, state2
+def interpolate_paths(G, joint_strategy):
+    """Per-agent animation state lists for a JointStrategy - agent_id ->
+    list of E/T/W/C/F/WI tuples, one per animation frame."""
+    result = simulate_joint_strategy(G, joint_strategy)
+    return {
+        i: _build_anim_states(G, strategy, result, i)
+        for i, strategy in joint_strategy.items()
+    }
 
 
 # Interpolate the robot position based on its current state.
@@ -431,106 +474,6 @@ def interpolate(robot, num, pos):
             (1 - num) * source[0] + num * dest[0],
             (1 - num) * source[1] + num * dest[1],
         )
-
-
-# calculate the path times for both players given their paths of the other
-def evaluate_paths(G, path1, path2):
-    t1 = 0
-    t2 = 0
-    node1 = 0
-    node2 = 0
-
-    while node1 < len(path1) or node2 < len(path2):
-
-        if node1 < len(path1) - 1:
-            if isinstance(path1[node1 + 1], str) and path1[node1 + 1].startswith(
-                "WAIT_"
-            ):
-                next_node = node1 + 2
-                # print("OOO")
-            else:
-                next_node = node1 + 1
-            next1 = (
-                t1
-                + G.edges[(path1[node1], path1[next_node])]["tau"]
-                + G.nodes[path1[next_node]]["tau_1"]
-            )
-            if (
-                node1 + 2 < len(path1)
-                and isinstance(path1[node1 + 2], str)
-                and path1[node1 + 2].startswith("WAIT_")
-            ):
-                next1 += int(path1[node1 + 2][len("WAIT_"):])
-            if (
-                node1 + 1 < len(path1)
-                and isinstance(path1[node1 + 1], str)
-                and path1[node1 + 1].startswith("WAIT_")
-                and node1 == 0
-            ):
-                next1 += int(path1[node1 + 1][len("WAIT_"):])
-
-        if node2 < len(path2) - 1:
-            next_node = (
-                (node2 + 1)
-                if not (
-                    isinstance(path2[node2 + 1], str)
-                    and path2[node2 + 1].startswith("WAIT_")
-                )
-                else (node2 + 2)
-            )
-            next2 = (
-                t2
-                + G.edges[(path2[node2], path2[next_node])]["tau"]
-                + G.nodes[path2[next_node]]["tau_1"]
-            )
-            if (
-                node2 + 2 < len(path2)
-                and isinstance(path2[node2 + 2], str)
-                and path2[node2 + 2].startswith("WAIT_")
-            ):
-                next2 += int(path2[node2 + 2][len("WAIT_"):])
-            if (
-                node2 + 1 < len(path2)
-                and isinstance(path2[node2 + 1], str)
-                and path2[node2 + 1].startswith("WAIT_")
-            ) and node2 == 0:
-                next2 += int(path2[node2 + 1][len("WAIT_"):])
-
-        if (next1 <= next2 and node1 < len(path1)) or node2 == len(path2):
-            t1 = next1
-            node1 += (
-                1
-                if not (
-                    node1 + 1 < len(path1)
-                    and isinstance(path1[node1 + 1], str)
-                    and path1[node1 + 1].startswith("WAIT_")
-                )
-                else 2
-            )
-        else:
-            t2 = next2
-            node2 += (
-                1
-                if not (
-                    node2 + 1 < len(path2)
-                    and isinstance(path2[node2 + 1], str)
-                    and path2[node2 + 1].startswith("WAIT_")
-                )
-                else 2
-            )
-
-        if node2 < len(path2) and node1 < len(path1) and path1[node1] == path2[node2]:
-            if (
-                abs(t2 - t1)
-                < G.nodes[path1[node1]]["tau_1"] - G.nodes[path1[node1]]["tau_2"]
-            ):
-                t2 = (
-                    max(t2, t1)
-                    - G.nodes[path1[node1]]["tau_1"]
-                    + G.nodes[path1[node1]]["tau_2"]
-                )
-                t1 = t2
-    return t1, t2
 
 
 class GraphVisualizer:
