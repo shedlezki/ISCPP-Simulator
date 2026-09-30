@@ -47,8 +47,16 @@ AGENT_COLORS = [
 # for at that node. Coalition formation (Section 3) is derived entirely from
 # these waiting declarations via Algorithm 1 below - there is no automatic
 # "merge if colocated" behavior anymore.
+#
+# Each entry of omega is either:
+#   - an agent id j: wait for j's next arrival at this node (any of its visits);
+#   - a pair (j, s): wait for agent j's visit at step s of j's own strategy
+#     (0-based). Only that visit counts: if j is at this node on a different
+#     step (e.g. passing through earlier, on its way elsewhere), the waiter
+#     keeps waiting. Needed when j's strategy visits this node more than once,
+#     where "j's next arrival" can be the wrong visit.
 
-StrategyStep = Tuple[Hashable, FrozenSet[int]]
+StrategyStep = Tuple[Hashable, FrozenSet]
 Strategy = List[StrategyStep]
 JointStrategy = Dict[int, Strategy]
 
@@ -71,6 +79,21 @@ def node_delay(G, v, n):
         return 0
     delays = G.nodes[v]["delay"]
     return delays[min(n, len(delays)) - 1]
+
+
+def _wait_entries(wait_set):
+    """A step's wait entries as (agent, step) pairs, step None for a plain
+    agent id (= that agent's next arrival)."""
+    for entry in wait_set:
+        if isinstance(entry, tuple):
+            yield entry[0], entry[1]
+        else:
+            yield entry, None
+
+
+def _wait_agents(wait_set):
+    """The agent ids a step waits for, regardless of which visit."""
+    return frozenset(j for j, _s in _wait_entries(wait_set))
 
 
 def validate_joint_strategy(G, joint_strategy):
@@ -98,7 +121,7 @@ def validate_joint_strategy(G, joint_strategy):
                 f"agent {i}: waiting set at the final node must be empty, got {last_wait!r}"
             )
         for step_index, (node, wait_set) in enumerate(strategy):
-            for other in wait_set:
+            for other, other_step in _wait_entries(wait_set):
                 if other == i:
                     raise ValueError(
                         f"agent {i}: cannot wait for itself at step {step_index} ({node!r})"
@@ -107,6 +130,24 @@ def validate_joint_strategy(G, joint_strategy):
                     raise ValueError(
                         f"agent {i}: waits for unknown agent {other} at step "
                         f"{step_index} ({node!r})"
+                    )
+                if other_step is None:
+                    continue
+                other_strategy = joint_strategy[other]
+                if not isinstance(other_step, int) or not 0 < other_step < len(other_strategy):
+                    # Step 0 is excluded: an agent's own start is never an
+                    # arrival (it departs at t=0 unconditionally), so a wait
+                    # for it could never be met.
+                    raise ValueError(
+                        f"agent {i}: waits for agent {other} at step {other_step!r}, "
+                        f"which is not a valid non-start step of agent {other}'s strategy "
+                        f"(step {step_index}, {node!r})"
+                    )
+                if other_strategy[other_step][0] != node:
+                    raise ValueError(
+                        f"agent {i}: at step {step_index} ({node!r}) waits for agent {other} "
+                        f"at its step {other_step}, which is at node "
+                        f"{other_strategy[other_step][0]!r}, not {node!r}"
                     )
         for (node_a, _), (node_b, _) in zip(strategy, strategy[1:]):
             if not G.has_edge(node_a, node_b):
@@ -344,12 +385,27 @@ def simulate_joint_strategy(G, joint_strategy):
                     continue
                 arrivals = {a: t for a, (t, _s) in occupants.items()}
                 wait_sets = {
-                    a: joint_strategy[a][step][1] for a, (_t, step) in occupants.items()
+                    a: _wait_agents(joint_strategy[a][step][1])
+                    for a, (_t, step) in occupants.items()
                 }
                 present = set(arrivals.keys())
-                complete = {
-                    a for a in occupants if _waiting_closure(a, wait_sets) <= present
+                # Occupants waiting for a specific visit (j, s) that is not
+                # the one currently here: j absent, or present on another
+                # step. They - and anyone whose closure reaches them - keep
+                # waiting.
+                unmet = {
+                    a
+                    for a, (_t, step) in occupants.items()
+                    if any(
+                        s is not None and (j not in occupants or occupants[j][1] != s)
+                        for j, s in _wait_entries(joint_strategy[a][step][1])
+                    )
                 }
+                complete = set()
+                for a in occupants:
+                    closure = _waiting_closure(a, wait_sets)
+                    if closure <= present and not (closure & unmet):
+                        complete.add(a)
                 if not complete:
                     continue
                 sub_arrivals = {a: arrivals[a] for a in complete}
@@ -400,7 +456,7 @@ def simulate_joint_strategy(G, joint_strategy):
             wait_set = joint_strategy[agent][step][1]
             result.arrival[agent][step] = arrival_time
             result.departure[agent][step] = float("inf")
-            result.coalition[agent][step] = _waiting_closure(agent, {agent: wait_set})
+            result.coalition[agent][step] = _waiting_closure(agent, {agent: _wait_agents(wait_set)})
             result.stuck_step[agent] = step
     pending.clear()
 

@@ -128,3 +128,87 @@ def test_revisit_forms_independent_episodes():
 
     times = evaluate_paths(G, joint_strategy)
     assert times == {1: 10, 2: 5, 3: 10}
+
+
+def _pass_through_graph():
+    # Agent 2 passes c, goes on to m, and comes back to c; agent 1 is meant
+    # to meet agent 2 on that return visit.
+    k = 2
+    G = nx.DiGraph()
+    for name in ["s_1", "s_2", "g_1", "g_2", "m"]:
+        add_node(G, name, k)
+    G.add_node("c", delay=[10, 4])
+    G.add_edge("s_1", "c", tau=1)
+    G.add_edge("s_2", "c", tau=2)
+    G.add_edge("c", "m", tau=1)
+    G.add_edge("m", "c", tau=1)
+    G.add_edge("c", "g_1", tau=1)
+    G.add_edge("c", "g_2", tau=1)
+    return G
+
+
+def test_plain_wait_matches_next_arrival_even_a_pass_through():
+    # Backward-compatible meaning of a plain agent id: the next arrival. Here
+    # that is agent 2's pass-through (step 1), so the pair forms too early and
+    # agent 2's later wait for agent 1 at c (step 3) can never be met.
+    G = _pass_through_graph()
+    joint_strategy = {
+        1: [("s_1", frozenset()), ("c", frozenset({2})), ("g_1", frozenset())],
+        2: [("s_2", frozenset()), ("c", frozenset()), ("m", frozenset()),
+            ("c", frozenset({1})), ("g_2", frozenset())],
+    }
+    result = simulate_joint_strategy(G, joint_strategy)
+    assert result.coalition[1][1] == frozenset({1, 2})
+    assert result.finished_at[1] == 7
+    assert result.stuck_step[2] == 3
+
+
+def test_step_specific_wait_ignores_other_visits():
+    # (2, 3): wait for agent 2's visit at its step 3 only. Agent 2's
+    # pass-through at step 1 is resolved on its own (solo, tau=10), and the
+    # pair forms on the return visit at t=14: both depart at 14 + tau(2) = 18.
+    G = _pass_through_graph()
+    joint_strategy = {
+        1: [("s_1", frozenset()), ("c", frozenset({(2, 3)})), ("g_1", frozenset())],
+        2: [("s_2", frozenset()), ("c", frozenset()), ("m", frozenset()),
+            ("c", frozenset({(1, 1)})), ("g_2", frozenset())],
+    }
+    result = simulate_joint_strategy(G, joint_strategy)
+    assert result.coalition[2][1] == frozenset({2})
+    assert result.departure[2][1] == 12
+    assert result.coalition[1][1] == frozenset({1, 2})
+    assert result.coalition[2][3] == frozenset({1, 2})
+    assert result.departure[1][1] == 18
+    assert evaluate_paths(G, joint_strategy) == {1: 19, 2: 19}
+    assert not result.stuck_step
+
+
+def test_plain_and_step_specific_entries_can_be_mixed():
+    G = _pass_through_graph()
+    joint_strategy = {
+        1: [("s_1", frozenset()), ("c", frozenset({(2, 3)})), ("g_1", frozenset())],
+        2: [("s_2", frozenset()), ("c", frozenset()), ("m", frozenset()),
+            ("c", frozenset({1})), ("g_2", frozenset())],
+    }
+    assert evaluate_paths(G, joint_strategy) == {1: 19, 2: 19}
+
+
+def test_step_specific_wait_validation():
+    import pytest
+
+    from iscpp_simulator.simulation import validate_joint_strategy
+
+    G = _pass_through_graph()
+    agent_2 = [("s_2", frozenset()), ("c", frozenset()), ("m", frozenset()),
+               ("c", frozenset()), ("g_2", frozenset())]
+    for bad, message in [
+        ((2, 0), "not a valid non-start step"),
+        ((2, 9), "not a valid non-start step"),
+        ((2, 2), "which is at node 'm', not 'c'"),
+    ]:
+        joint_strategy = {
+            1: [("s_1", frozenset()), ("c", frozenset({bad})), ("g_1", frozenset())],
+            2: agent_2,
+        }
+        with pytest.raises(ValueError, match=message):
+            validate_joint_strategy(G, joint_strategy)
