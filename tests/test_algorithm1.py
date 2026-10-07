@@ -144,3 +144,17 @@ def test_readiness_time_ties_are_deterministic():
     # whenever it's beneficial, matching the paper's own text that a
     # later-ready coalition always weakly benefits from joining for free.
     assert D1 == {1: 8, 2: 8, 3: 8, 4: 8}
+
+
+def test_no_departure_before_the_last_member_arrives():
+    # Two pairs ready at 10 and four pairs ready at 20, tau falling to 10 at
+    # 12 agents (an E1 lattice node). The first pair's pass extends its
+    # coalition with everyone (departure 20 + tau(12) = 30); the second
+    # pair's re-check must not use its own ready time 10 as the task start
+    # (which gave departure 20, before the agents ready at 20 did any task).
+    curve = [100, 92, 84, 75, 67, 59, 51, 43, 35, 26, 18, 10]
+    arrivals = {1: 10, 10: 10, 4: 10, 7: 10, 0: 20, 2: 20, 3: 20, 11: 20, 5: 20, 9: 20, 6: 20, 8: 20}
+    pairs = [(1, 10), (4, 7), (0, 2), (3, 11), (5, 9), (6, 8)]
+    wait_sets = {a: {b} for x, y in pairs for a, b in ((x, y), (y, x))}
+    D = compute_local_departure_times(arrivals, wait_sets, lambda n: curve[min(n, 12) - 1])
+    assert D == {a: 30 for a in arrivals}

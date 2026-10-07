@@ -223,9 +223,15 @@ def _resolve_local_coalitions(arrivals, wait_sets, delay_fn):
             # worth it" become "a3+a4 together: worth it" without losing a3.
             pending = pending | closure[j]
             candidate = C_star[i] | pending
-            if t_ready[j] + delay_fn(len(candidate)) <= D[i]:
+            # The task starts once the coalition's last member is ready. That
+            # is usually j (candidates come in ready order), but C_star[i]
+            # may already hold later arrivals - added by an earlier agent's
+            # pass - and then t_ready[j] would let the coalition leave
+            # before they arrive.
+            start = max(t_ready[m] for m in candidate)
+            if start + delay_fn(len(candidate)) <= D[i]:
                 C_star[i] = candidate
-                D[i] = t_ready[j] + delay_fn(len(candidate))
+                D[i] = start + delay_fn(len(candidate))
                 for m in C_star[i] & a_post_set:
                     C_star[m] = C_star[i]
                     D[m] = D[i]
